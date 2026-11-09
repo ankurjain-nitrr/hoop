@@ -107,8 +107,8 @@ switches are tracked in [#212](https://github.com/ankurjain-nitrr/hoop/issues/21
     `hoop work-hook` runs at the end of every turn; the session-end hook runs as the session ends.
   - When Claude Code asks for permission to use a tool, and only after you turned it on in
     `hoop init` (a line `permission_prompts` in `~/.hoop/on`; off by default), the permission hook
-    keeps the prompt, with the command or change in full until it is answered, for hoop's pages to
-    answer too, and waits. The terminal still asks, and the first answer wins: hoop allows a call
+    shows the prompt, with the command or change in full until it is answered, on Work and in
+    Home's Waiting on you with Allow once and Deny, and waits. The terminal still asks, and the first answer wins: hoop allows a call
     only on a click of Allow once, never by itself, and never for a later call. A Claude session
     that holds a browser tool, or another program you run, could open the page and click it too;
     hoop can't tell that click from yours. Off, it exits at once without starting hoop.

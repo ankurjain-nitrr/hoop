@@ -26,6 +26,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldedByDefaul
 import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
+import { loadPermissions, onPermissions, prompts, promptHtml } from "./permissions.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
 import { REVIEW_LINK, reviewPath } from "./links.js";
@@ -721,7 +722,13 @@ function sessionHtml(s, n, now) {
     `<div class="part-head"><h3 id="${id}-${k}">${foldButton(`${key}:${k}`, `${id}-${k}-body`, title)}</h3>${foldSummary(`${key}:${k}`, counts)}</div><div ${foldBody(`${key}:${k}`, `${id}-${k}-body`)}>${body}</div>`;
   // Only an ended session can be removed, so a running one's todos never vanish under it.
   const forget = s.state === "ended" ? btn("forget", `${s.id}|session|`, `Remove session ${name}`, "Remove session", "", " danger forget") : "";
-  return `<section class="session work-session" id="${itemId(s.id, "session", "")}" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
+  return `<section class="session work-session" id="${itemId(s.id, "session", "")}" aria-labelledby="${id}"><div class="session-head"><h2 id="${id}">${foldButton(key, `${id}-body`, esc(name), "session")}</h2>${summary}${details}${forget}</div>${uiHtml(`${s.id}|session|`, esc(name))}${nowHtml(s, now)}${prompts(
+    s.id,
+  )
+    .map((p) => promptHtml(p, 3))
+    .join(
+      "",
+    )}${waitingHtml(s, now)}${nextHtml(s)}${sessionPrsHtml(s)}${shared ? `<p class="up-next"><span class="now-label">Source:</span> most todos ${sourceWords(s, shared)}</p>` : ""}<div ${foldBody(key, `${id}-body`)}>${recentHtml(s, now)}${waits}${part("todos", "Todos", todosHtml(s, now) + requestsHtml(s) + historyHtml(s), todos)}${part("agents", "Subagents", agents, agentStates)}</div></section>`;
 }
 
 /** What Work says with nothing tracked: in one line, what it shows and how to turn it on. */
@@ -856,7 +863,12 @@ function paint() {
   regainFocus(app, was.at);
 }
 
+// Work shows the permission prompts again when they change, or after an answer.
+onPermissions(() => location.pathname === "/work" && refresh());
+
 async function load() {
+  // Each load asks for the permission prompts too.
+  void loadPermissions();
   try {
     const body = await api("/api/work");
     if (!Array.isArray(body.sessions)) throw new Error("the reply lists no sessions");

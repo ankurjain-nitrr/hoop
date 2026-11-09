@@ -3054,3 +3054,26 @@ input.btext {
 .confirm-dialog .steer-error:empty {
   display: none;
 }
+
+/* A permission prompt on Work and Home: what the call will run or change, in full; a change's lines as removed and added. */
+.permission .perm-call {
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--code);
+  border-radius: var(--radius-field);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.permission .perm-del {
+  background: var(--del);
+  color: var(--del-ink);
+}
+.permission .perm-add {
+  background: var(--add);
+  color: var(--add-ink);
+}
+.perm-answered {
+  color: var(--muted);
+}

@@ -13,6 +13,7 @@ import { editWork, workHook } from "../src/work.js";
 import { addChanges } from "../src/steer.js";
 import { OPS } from "../src/ops.js";
 import { UpdateCheck } from "../src/update.js";
+import { askPermission } from "../src/permissions.js";
 
 // The Work page shows a busy session's todos, done ones folded, and its subagents.
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
@@ -716,6 +717,14 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
   const home = tempHome();
   for (const url of Object.keys(PRS)) trackPr(home, url, "sess-pages");
   seedWork(home);
+  // A permission prompt waits on the person, on Home and on Work (src/permissions.ts).
+  writeFileSync(join(home, "on"), "permission_prompts\n");
+  askPermission(home, {
+    session_id: HOOKS["post-taskcreate"].session_id,
+    hook_event_name: "PermissionRequest",
+    tool_name: "Bash",
+    tool_input: { command: "rm -rf build", description: "Clean the build folder" },
+  });
   // A newer hoop is known, so Home shows its update notice in every state.
   writeFileSync(join(home, "update.json"), JSON.stringify({ checked_at: new Date().toISOString(), latest: "99.0.0" }));
   await withBrowser(
@@ -932,6 +941,8 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
               assert.equal(section.rule, "solid", "a section heading sits over a rule");
               // A newer hoop's notice sits under the header (src/update.ts).
               await p.locator(".list > .list-head + .update-notice").waitFor();
+              // The permission prompt waits in Waiting on you.
+              await p.locator(".list .permission", { hasText: "Waiting on you: permission" }).waitFor();
               const completed = p.getByRole("button", { name: /^Completed/ });
               assert.equal(await completed.getAttribute("aria-expanded"), "false");
               assert.match(await completed.innerText(), /^Completed\s+\d+$/);
@@ -1103,6 +1114,7 @@ test("every page works in both themes, at phone width, from the keyboard, offlin
         {
           name: "work",
           path: "/work",
+          // The pull request's state comes on a later poll; the rows wait for it.
           // The pull request's state comes on a later poll; the rows wait for it.
           ready: ".work-session .todo .why a[href$='/pull/1']",
           sends: {

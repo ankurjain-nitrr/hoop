@@ -203,6 +203,17 @@ questions unanswered", "2 answers, nothing open").
 "Sent to Claude 14:01", then "Read by Claude 14:02" (or "Read by" the session's name), "Answered by
 Claude 14:03". Not "Claude read this at 14:02".
 
+**Permission prompts.** A prompt Claude Code shows in the terminal, while permission prompts are
+on, is an action item's card on Work (under its session, below what it does now) and in Home's
+Waiting on you, where it counts: the heading "Waiting on you: permission", the tool as a tag, what
+it will run or change in full (a command in code, a file's change as removed and added lines, a
+new file's text), then **Allow once** (primary) and **Deny**. Deny opens the inline reason box, as
+Won't do's does: "Reason (optional; Claude reads it)", **Deny** and Cancel. Once answered, the card
+becomes a note with the tool: "Allowed in hoop 14:02", "Denied in hoop 14:02" or "Answered in the
+terminal 14:02", for ten minutes; one hoop handed back says "Answer this in the terminal." An
+answer that comes second shows, on its error line, how the first went (decided in
+rv_mw7wkyez20853f).
+
 **hoop's terms.** Words hoop uses for its own parts, the same on every page:
 
 | Term | Means |
