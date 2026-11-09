@@ -336,65 +336,16 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
   try {
     for (let run = 0; message && run <= MAX_RESUMES && Date.now() < deadline; run++) {
       const { cost, turns } = parseTranscript(transcript);
-      // A run that stopped for a limit isn't resumed: the trial has spent what it may.
-      const stop = (transcript as { type?: string; subtype?: string }[]).some((e) => e.type === "result" && LIMITS.includes(e.subtype ?? ""));
-      if (stop || cost >= o.maxUsd || turns >= o.maxTurns) break;
-      const args = [
-        ...["-p", message, run === 0 ? "--session-id" : "--resume", session],
-        ...["--output-format", "stream-json", "--verbose", "--max-turns", String(o.maxTurns - turns)],
-        ...["--max-budget-usd", Math.max(0.01, o.maxUsd - cost).toFixed(2)],
-        // Only this checkout's plugin: the person's own plugins and settings stay out of the trial.
-        ...["--plugin-dir", join(root, "plugins/hoop"), "--setting-sources", "project"],
-        ...["--permission-mode", "acceptEdits", "--permission-prompts", "none", "--allowedTools", "mcp__plugin_hoop_hoop"],
-        ...(o.model ? ["--model", o.model] : []),
-      ];
-      const c = claude(args, box.repo, box.env, transcript);
-      let exited = false;
-      c.done.then(() => (exited = true));
-      message = undefined;
-      for (;;) {
-        const { calls, said } = parseTranscript(transcript);
-        const ended = exited;
-        if (!dirty && !calls.some((x) => x.result?.approved === true)) {
-          const status = git(box.repo, "status", "--porcelain");
-          if (status) dirty = status.split("\n");
-        }
-        const wakes = person.wakes.length;
-        const acted = await person.tick(calls, ended, said.length);
-        // A review given after Claude stopped reaches it as hoop's message, in the same session.
-        if (ended && person.wakes.length > wakes) message = person.wakes.at(-1);
-        if (ended && !acted) break;
-        if (Date.now() > deadline && !ended) {
-          timedOut = true;
-          message = undefined;
-          c.child.kill();
-        }
-        await sleep(tickMs);
-      }
+      if (limited(transcript) || cost >= o.maxUsd || turns >= o.maxTurns) break;
+      const c = claude(runArgs(message, run === 0, session, o, turns, cost), box.repo, box.env, transcript);
+      const ran = await follow(c, { person, repo: box.repo, transcript, deadline, tickMs, dirty });
+      ({ message, dirty } = ran);
+      timedOut ||= ran.timedOut;
     }
   } finally {
     box.pages.kill();
   }
-  const work = workSnapshot(box.home, session);
-  const record: TrialRecord = {
-    scenario: s.name,
-    script: s.script,
-    setup: setupHash(s),
-    trial: n,
-    // The model the session reports, which --model's alias resolved to; the flag only when it reports none.
-    model: (transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model ?? o.model,
-    hoop: release(root) ?? "unknown",
-    // The plugin as it was when the run started, as run.json has it.
-    plugin: plugin.commit,
-    ...(plugin.version ? { plugin_version: plugin.version } : {}),
-    plugin_hash: plugin.hash,
-    transcript,
-    reviews: snapshot(box.home),
-    ...(work ? { work } : {}),
-    person: person.log,
-    ...(dirty ? { dirty_before_approval: dirty } : {}),
-    ...(timedOut ? { timed_out: true } : {}),
-  };
+  const record = trialRecord(s, n, o, plugin, { box, session, transcript, person, dirty, timedOut });
   const t = trialOf(record);
   const outcomes = score(t, s.checks);
   writeAtomic(join(out, `${s.name}-${n}.json`), `${JSON.stringify(record, null, 1)}\n`);
@@ -406,6 +357,89 @@ export async function trial(s: Scenario, n: number, o: Options, out: string, tic
     for (const dir of [box.repo, box.home]) rmSync(dir, { recursive: true, force: true });
   }
   return { outcomes, turns: t.turns, cost: t.cost, timedOut, record };
+}
+
+/** Whether a run stopped for a limit: the trial has spent what it may, so it isn't resumed. */
+const limited = (transcript: unknown[]) =>
+  (transcript as { type?: string; subtype?: string }[]).some((e) => e.type === "result" && LIMITS.includes(e.subtype ?? ""));
+
+/** One Claude Code run's arguments: its message, in the trial's session, within the turns and spend left. */
+function runArgs(message: string, first: boolean, session: string, o: Options, turns: number, cost: number): string[] {
+  return [
+    ...["-p", message, first ? "--session-id" : "--resume", session],
+    ...["--output-format", "stream-json", "--verbose", "--max-turns", String(o.maxTurns - turns)],
+    ...["--max-budget-usd", Math.max(0.01, o.maxUsd - cost).toFixed(2)],
+    // Only this checkout's plugin: the person's own plugins and settings stay out of the trial.
+    ...["--plugin-dir", join(root, "plugins/hoop"), "--setting-sources", "project"],
+    ...["--permission-mode", "acceptEdits", "--permission-prompts", "none", "--allowedTools", "mcp__plugin_hoop_hoop"],
+    ...(o.model ? ["--model", o.model] : []),
+  ];
+}
+
+type Following = { person: Person; repo: string; transcript: unknown[]; deadline: number; tickMs: number; dirty: string[] | undefined };
+
+/**
+ * Follows one run, the person acting on it each tick, until Claude ended and the person has nothing
+ * left to do. Gives the message the next run resumes with (a review the person gave after Claude
+ * stopped), whether the run passed the deadline and was killed, and what the repository held before
+ * the person approved.
+ */
+async function follow(c: ReturnType<typeof claude>, f: Following): Promise<{ message?: string; timedOut: boolean; dirty?: string[] }> {
+  let exited = false;
+  c.done.then(() => (exited = true));
+  let message: string | undefined;
+  let timedOut = false;
+  let dirty = f.dirty;
+  for (;;) {
+    const { calls, said } = parseTranscript(f.transcript);
+    const ended = exited;
+    dirty ??= dirtyBeforeApproval(f.repo, calls);
+    const wakes = f.person.wakes.length;
+    const acted = await f.person.tick(calls, ended, said.length);
+    // A review given after Claude stopped reaches it as hoop's message, in the same session.
+    if (ended && f.person.wakes.length > wakes) message = f.person.wakes.at(-1);
+    if (ended && !acted) break;
+    if (Date.now() > f.deadline && !ended) {
+      timedOut = true;
+      message = undefined;
+      c.child.kill();
+    }
+    await sleep(f.tickMs);
+  }
+  return { message, timedOut, dirty };
+}
+
+/** What the repository holds while no call has seen the person's approval yet, or undefined. */
+function dirtyBeforeApproval(repo: string, calls: ReturnType<typeof parseTranscript>["calls"]): string[] | undefined {
+  if (calls.some((x) => x.result?.approved === true)) return undefined;
+  const status = git(repo, "status", "--porcelain");
+  return status ? status.split("\n") : undefined;
+}
+
+type Ran = { box: Awaited<ReturnType<typeof sandbox>>; session: string; transcript: unknown[]; person: Person; dirty: string[] | undefined; timedOut: boolean };
+
+/** What a trial recorded: its scenario, what it ran on, the session's transcript and what hoop and the person did. */
+function trialRecord(s: Scenario, n: number, o: Options, plugin: ReturnType<typeof pluginNow>, r: Ran): TrialRecord {
+  const work = workSnapshot(r.box.home, r.session);
+  return {
+    scenario: s.name,
+    script: s.script,
+    setup: setupHash(s),
+    trial: n,
+    // The model the session reports, which --model's alias resolved to; the flag only when it reports none.
+    model: (r.transcript as { type?: string; model?: string }[]).find((e) => e.type === "system" && e.model)?.model ?? o.model,
+    hoop: release(root) ?? "unknown",
+    // The plugin as it was when the run started, as run.json has it.
+    plugin: plugin.commit,
+    ...(plugin.version ? { plugin_version: plugin.version } : {}),
+    plugin_hash: plugin.hash,
+    transcript: r.transcript,
+    reviews: snapshot(r.box.home),
+    ...(work ? { work } : {}),
+    person: r.person.log,
+    ...(r.dirty ? { dirty_before_approval: r.dirty } : {}),
+    ...(r.timedOut ? { timed_out: true } : {}),
+  };
 }
 
 type Result = { scenario: string; outcomes: Outcome[]; turns: number; cost: number; timedOut: boolean; record?: TrialRecord };
