@@ -605,7 +605,8 @@ export function replyToComment(
   const found = own?.changes?.some((c) => c.id === id) ? own : workRecords(home).find((r) => r.changes?.some((c) => c.id === id));
   if (!found) throw new HoopError(`no comment ${id} in this session's work`);
   const theirs = found.changes!.find((c) => c.id === id)!;
-  const tookOver = Boolean(theirs.process) && actsAs({ session: found.session, process: theirs.process }, session, opts.sessions);
+  // The session it took over after `/clear` (the same process), or one resumed from it (`claude --resume`).
+  const tookOver = actsAs({ session: found.session, ...(theirs.process ? { process: theirs.process } : {}) }, session, opts.sessions);
   if (found.session !== session && !tookOver) throw new HoopError(`${id} is in another session's work: only the session it was made in replies to it`);
   const at = opts.now ?? new Date().toISOString();
   const reply = editWork(home, found.session, (r) => {

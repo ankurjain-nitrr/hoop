@@ -16,6 +16,14 @@ All notable changes to hoop are listed here. The format follows
 - A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
   issue on a release Monday when one is due; it publishes nothing (#212).
 
+### Fixed
+
+- A conversation resumed under a new session ID (as `claude --resume` does for a session that was
+  still running) acts as its earlier session once that one has stopped: it replies to the person's
+  comments and added todos on Work, and waits on, reads and withdraws the quick questions it asked
+  before, instead of being refused as another session. A fork running beside its original doesn't
+  (#271).
+
 ## [1.6.0] - 2026-11-08
 
 ### Added

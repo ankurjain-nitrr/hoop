@@ -5,6 +5,7 @@ import { type Owner, type OwnerProcess, validSession } from "./owner.js";
 import { alive, lstartTimes, processStarts, START_MARGIN_MS } from "./proc.js";
 import { claudeDir, opt, readJsonDir } from "./util.js";
 import type { ReviewMeta } from "./store.js";
+import { earlierSessions } from "./resumes.js";
 
 /** A Claude Code session as `<claude dir>/sessions/<pid>.json` describes it. */
 export type ClaudeSession = {
@@ -113,12 +114,15 @@ export function ownerSession(owner: Pick<Owner, "session" | "process">, sessions
 
 /**
  * Whether `session` acts as `owner`: it is the owner's session, or the Claude Code session running
- * now in the process the owner record names, as after `/clear`. The caller's process is looked up in
+ * now in the process the owner record names, as after `/clear`, or a session resumed from it
+ * (`claude --resume`, src/resumes.ts). The caller's process is looked up in
  * Claude Code's session files, never taken from the caller.
  */
 export function actsAs(owner: Owner | undefined, session: string | null | undefined, sessions: SessionReader = claudeSessions): boolean {
   if (!owner || !session) return false;
   if (owner.session === session) return true;
+  // A resumed conversation (`claude --resume`) acts as the session it continues, under any new ID and process.
+  if (owner.claude !== false && earlierSessions(session).includes(owner.session)) return true;
   const p = owner.claude === false ? undefined : owner.process;
   if (!p) return false;
   const now = processOf(session, sessions);
