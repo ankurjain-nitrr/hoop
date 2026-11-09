@@ -46,12 +46,9 @@ import {
   approvable,
   checkVerdict,
   reviewable,
-  thread,
-  threadIds,
-  threadViews,
-  type ThreadView,
   unansweredQuestions,
 } from "./rules.js";
+import { thread, threadIds, threadViews, type ThreadView } from "./threads.js";
 import { agentFromEnv, ownerNow, ownerOf, sessionLabel, type Agent, type Owner } from "./owner.js";
 import { markReviewWait } from "./review-mark.js";
 import { currentUser, gitRoot, HoopError, pagesPort, repoDir, slugify, sha256 } from "./util.js";

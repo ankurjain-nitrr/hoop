@@ -1,0 +1,51 @@
+name: Release due
+
+on:
+  schedule:
+    # Mondays at 06:23 UTC; the job goes on only every second one (docs/RELEASING.md, When).
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+# hoop releases every two weeks when main has changes. This opens one "Release due" issue on a
+# release Monday when main has commits since the last tag, as a reminder; it publishes nothing,
+# tags nothing and changes no code. A run started by hand skips the every-second-Monday check.
+jobs:
+  remind:
+    name: Remind
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read # Reads the tags and the commits since the last one.
+      issues: write # Opens the reminder issue.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Open a Release due issue when one is due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          # A release Monday: an even number of weeks after this one.
+          FIRST_MONDAY: "2026-11-09"
+        run: |
+          weeks=$(( ($(date -u +%s) - $(date -u -d "$FIRST_MONDAY" +%s)) / 604800 ))
+          if [ "$EVENT" = schedule ] && [ $((weeks % 2)) -ne 0 ]; then
+            echo "Not a release Monday."
+            exit 0
+          fi
+          last=$(git describe --tags --abbrev=0 --match 'v*' HEAD)
+          count=$(git rev-list --count "$last..HEAD")
+          if [ "$count" -eq 0 ]; then
+            echo "main has no commits since $last: no release is due."
+            exit 0
+          fi
+          open=$(gh issue list --state open --search 'in:title "Release due"' --json number --jq length)
+          if [ "$open" -ne 0 ]; then
+            echo "A Release due issue is already open."
+            exit 0
+          fi
+          body="main has $count commits since $last. Make a release as docs/RELEASING.md says: a release pull request, the eval release check, the tag, then the approval on npmjs.com. Close this issue once the release is approved, or with a reason to skip this one."
+          gh issue create --title "Release due: $count commits since $last" --body "$body"

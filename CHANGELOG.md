@@ -13,6 +13,8 @@ All notable changes to hoop are listed here. The format follows
   PermissionRequest hook keeps the prompt for hoop's pages and waits; the terminal still asks, and
   the first answer wins. hoop never allows anything by itself. The page that shows the prompts
   follows (#212).
+- A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
+  issue on a release Monday when one is due; it publishes nothing (#212).
 
 ## [1.6.0] - 2026-11-08
 

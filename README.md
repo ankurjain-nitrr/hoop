@@ -16,7 +16,9 @@ lists everything it does on your machine.
 
 Every Claude session on your machine uses the same hoop, at `http://localhost:4747`.
 
-> **Status: before 1.0.** Tool names, commands and stored files may still change.
+> **Status: before 1.0.** Tool names, commands and stored files may still change. This README
+> describes `main`; hoop releases every two weeks when `main` has changes, and `CHANGELOG.md`'s
+> Unreleased section lists what isn't released yet ([docs/RELEASING.md](docs/RELEASING.md)).
 
 ## Get started
 
