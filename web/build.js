@@ -11,7 +11,7 @@ import { api, post } from "/api.js";
 import { statusBadge } from "/status.js";
 import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
-import { headingLevel, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
+import { FENCE, headingLevel, headingText, ITEM, JOIN, parentOf, QUOTE, rowCells, SUBTITLE, swapRange, TABLE_DELIM, unitRange } from "/blocks.js";
 import { diagramHtml, mountDiagrams } from "/diagram.js";
 import { icons } from "/icons.js";
 import { disclosure, foldBody, foldButton, foldCount, foldedByDefault, foldHidden, isFolded, refold, unfold } from "/fold.js";
@@ -295,12 +295,6 @@ function refinable(block) {
 
 const send = (body) => post(`/api/reviews/${b.view.meta.id}/build`, body);
 
-const headingText = (text) =>
-  text
-    .replace(/^\s{0,3}#{1,6}\s*/, "")
-    .replace(/\s+#+\s*$/, "")
-    .trim();
-
 /** A heading's words as a control's label names them: plain text, without markdown markers. */
 const headingWords = (text) => plainText(headingText(text));
 
@@ -418,7 +412,7 @@ function blockHtml(block) {
   if (block.kind === "diagram") return diagramHtml(t.split("\n").join(JOIN));
   if (block.kind === "code") {
     const lines = t.split("\n");
-    const inner = lines.slice(1, lines.length > 1 && /^\s{0,3}(```|~~~)/.test(lines.at(-1)) ? -1 : undefined);
+    const inner = lines.slice(1, lines.length > 1 && FENCE.test(lines.at(-1)) ? -1 : undefined);
     return `<pre class="bcode"><code>${esc(inner.join("\n"))}</code></pre>`;
   }
   return flowHtml(block);
