@@ -11,7 +11,7 @@ import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
 import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
-import { rowCells, TABLE_DELIM } from "/blocks.js";
+import { OPTION, rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
 import { reviewOfPath, reviewPath } from "/links.js";
@@ -487,9 +487,6 @@ function tableHtml(item, from, end) {
   }
   return `<div class="md-table-wrap"><table class="md-table"><tbody>${rows}</tbody></table></div>`;
 }
-
-// A markdown question's options are its top-level list items, in order, as the parser reads them.
-const OPTION = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
 
 /** A radio button for one answer to a question. */
 function radioHtml(item, value, label) {
