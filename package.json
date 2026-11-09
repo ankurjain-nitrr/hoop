@@ -1,6 +1,6 @@
 {
   "name": "@ankurjain-nitrr/hoop",
-  "version": "0.2.0",
+  "version": "1.6.0",
   "description": "Humans in the loop: review agent decisions like code",
   "license": "Apache-2.0",
   "repository": {
@@ -35,6 +35,8 @@
     "format": "biome format --write src web test scripts",
     "schemas": "tsx scripts/schemas.ts",
     "check:package": "npm run build && publint run --strict",
+    "check:version": "tsx scripts/version.ts --check",
+    "version": "tsx scripts/version.ts",
     "debt": "tsx scripts/debt.ts"
   },
   "dependencies": {

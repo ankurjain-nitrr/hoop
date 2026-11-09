@@ -12,10 +12,18 @@ All notable changes to hoop are listed here. The format follows
   session (Claude reads what you sent with `hoop_wait` or `hoop_feedback`, and Work's changes wait
   for the gate), and `mermaid` stops pages loading Mermaid, showing each diagram's source. The pages
   say so where it applies (#212).
+
+## [1.6.0] - 2026-11-08
+
+### Added
+
+- Home says when a newer hoop is out ("hoop X.Y.Z is available. To update, run `hoop update`"),
+  from a check of npm the pages process makes at most once a day; `HOOP_NO_UPDATE_CHECK` turns it
+  off. `hoop update` updates the global package and the plugin, printing the commands first (#212).
 - Each of the plugin's hooks that acts inside a session can be turned off on its own, by naming it
   on a line of hoop's off list, `~/.hoop/off`: `plan_hook`, `tool_gate` (the gate before every tool
   call; off, a subagent you stopped on Work runs on too) and `turn_gates` (the Stop and
-  TaskCompleted gates). A hook that is off exits at once without starting hoop or Node.js. The plugin is 1.5.11 (#212).
+  TaskCompleted gates). A hook that is off exits at once without starting hoop or Node.js (#212).
 - Bare `hoop` opens Home in the browser and prints its link (`--no-browser` only prints it),
   starting the review pages when none answer (#271).
 - `hoop init` ends by opening a sample review in the browser (`--no-browser` only prints its link):
@@ -36,6 +44,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Changed
 
+- The package and the plugin share one version number, which moves only at a release:
+  `npm version X.Y.Z --no-git-tag-version` sets the package, its lock file and the plugin, and the
+  plugin runs the package of its own version. `npm run check:version`, the tests and the Release
+  workflow fail when they differ. The next release is 1.6.0, after the plugin's 1.5.10 and the
+  package's 0.2.0 (#212).
 - hoop's message to Claude about a review counts your answers as well as your comments ("changes
   requested, 0 comments, 1 answer"), so a review that only answered questions no longer reads as
   empty (#271).

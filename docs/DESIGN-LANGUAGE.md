@@ -26,7 +26,7 @@ a dialog backdrop, which is black at low opacity.
 | `--live` (amber) | Agent work running now (a clock icon), or your move (a person icon) | Running, Working, Checks running, a live session; Awaiting review, Waiting on you, open action items, an unsent comment. Also the current page in the nav, its one use that isn't live |
 | `--ok` (green) | Finished well | Approved, Done, Checks passed, Merged, Applied in rev N, a recommended option |
 | `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change Claude overrode, a contradiction Claude flagged in its own text, the pages-stopped banner |
-| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet, what Claude generated or changed, a change Claude proposes until it is accepted (its card's border, and the text it would insert, blue on `--info-wash`), the TL;DR, a new revision |
+| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet, what Claude generated or changed, a change Claude proposes until it is accepted (its card's border, and the text it would insert, blue on `--info-wash`), the TL;DR, a new revision, a newer hoop on Home (its callout, with the command that updates) |
 | `--muted` (grey) | Everything else | Queued, Idle, Ended, the "Claude's session has ended" line on the review and quick-question pages (its resume command stays as code), Withdrawn, Closed, Replaced, how far a comment got |
 | `--link` | A link, always underlined (except a link inside a link; see Exceptions) | Links in notes, descriptions and action items |
 | `--focus` | Keyboard focus and the line jumped to | Focus rings, a block being edited |

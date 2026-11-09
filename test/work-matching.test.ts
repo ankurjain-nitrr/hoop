@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { addChanges, workGate } from "../src/steer.js";
-import { readWork, workHook, workQueue, workView } from "../src/work.js";
+import { addChanges } from "../src/steer.js";
+import { workGate } from "../src/tool-gate.js";
+import { readWork, workHook } from "../src/work.js";
+import { workQueue, workView } from "../src/work-view.js";
 import type { ClaudeSession } from "../src/claude-sessions.js";
 import { tempHome } from "./helpers.js";
 

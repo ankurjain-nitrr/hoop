@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { activityOf, recentSteps, stepWords, transcriptActivity, waitsOn } from "../src/activity.js";
-import { doingNow } from "../src/work.js";
+import { doingNow } from "../src/work-view.js";
 import { agentHealth, clockText, counts, ENDED_COUNT_MS, readAt, sortAgents, sortSessions, sortTodos, span, STALE_MS, todoState } from "../web/activity.js";
 
 const FIXTURE = new URL("./fixtures/work-transcript.jsonl", import.meta.url);

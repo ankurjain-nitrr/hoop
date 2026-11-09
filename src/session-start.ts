@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { askState, ownedBy, reviewStatus, type StatusKey, threadViews } from "./rules.js";
 import { receiptKey, receivedBy, type ReviewMeta, type Store } from "./store.js";
 import { clip, isList, isRecord, tryReadJson, writeJson } from "./util.js";
-import { workQueue } from "./work.js";
+import { workQueue } from "./work-view.js";
 import { hookFields } from "./hook-input.js";
 
 // What a session starting (new, resumed, cleared or compacted) is told about its work in hoop:

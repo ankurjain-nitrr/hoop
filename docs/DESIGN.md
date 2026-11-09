@@ -238,6 +238,20 @@ The API (`src/web.ts`) refuses a Host other than `localhost` or `127.0.0.1` on i
 Origin, and a write that isn't JSON. It also takes every session's and command's writes (see "One
 writer").
 
+**A newer hoop** (`src/update.ts`). The pages process (`startWeb`, unless `HOOP_NO_UPDATE_CHECK` is
+set) keeps an `UpdateCheck`: `/api/info` reads the answer kept in `update.json` and, when that is a
+day old or missing, asks `npm view @ankurjain-nitrr/hoop version` in the background, one ask at a
+time. A failed ask keeps the last answer and records the time, so offline it asks once a day and
+says nothing. `/api/info` carries `update: { latest, command }` only when `latest` is newer than
+the running release; Home shows it as an info callout under its header, with `hoop update`, or the
+npx command when the pages run from npx's cache. A server built by `createWebServer` alone, as in
+tests, never checks; a process that can't write `update.json` remembers when it asked. Home reads
+the update as it loads and never adds the callout to a Home already open, so nothing moves under the
+reader. `hoop update` prints, then runs, `npm install -g` (only when `npm root -g` holds hoop's
+own copy: a symbolic link there, as `npm link` makes, or a package that resolves outside it, is a
+checkout, which it names and leaves) and `claude plugin marketplace update hoop` and `claude plugin update hoop@hoop`,
+stopping at the first failure with the commands left to run.
+
 ## Colors
 
 Colours, sizes, the pieces each page uses, interaction patterns and wording are in
@@ -773,7 +787,7 @@ The plugin's hooks run `plugins/hoop/scripts/track-work.sh` on `PreToolUse` of t
 `PostToolUse` of TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TodoWrite and Agent (once
 named Task), and on `SubagentStart` and `SubagentStop`. Each hook is `async`, so Claude Code runs it
 in the background; the script skips any other input without starting node and always exits 0. It
-runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work.ts`) to the
+runs `hoop work-hook`, which sends an input that holds events (`workEvents` in `src/work-events.ts`) to the
 pages process, which applies them to `work/<session>.json` (and drops it when none answers):
 
 - Todos come from TaskCreate (`tool_response.task.id`), TaskUpdate (`tool_input.taskId`, status
@@ -927,7 +941,8 @@ process" means none answers on hoop's port.
   code, the pages process included, uses no model SDK or API. It talks to its pages process on
   loopback (127.0.0.1, and ::1 to see whether the port is taken), and it wakes the person's own
   Claude Code sessions by writing a Work change into a session's messaging socket, which starts a
-  turn there. Only `hoop init` runs `claude`, to install the plugin. The test reads the source for
+  turn there. Only `hoop init` and `hoop update` run `claude`, to install and update the plugin, which
+  a person runs from a terminal; no hook does. The test reads the source for
   this, and lists by name, with the reason, each file that may import a network module.
 - **It is fast when there's nothing to check**: with an empty hoop folder each hook answers within
   300 ms. The test allows three times that on a built hoop (five through `tsx`), so a busy CI
@@ -1134,7 +1149,7 @@ gate hasn't refused yet. Without
   `hoop work-gate` only for a todo tool call (TaskUpdate, TodoWrite) while `.gate` exists, for one
   that sets `in_progress` on a todo other than the one `.order` names or on one `.blocked` lists, or for a
   call whose input names an agent listed in `.agents`; the command sends the call to the pages
-  process, which decides and records it. `workGate` refuses a removed todo whenever it is started or marked
+  process, which decides and records it. `workGate` (`src/tool-gate.ts`) refuses a removed todo whenever it is started or marked
   done, a parked todo once, an edited todo once until the call sets its new subject and description (a running
   todo's only when marked done), a waiting move, comment, add or withdraw once, starting a queued todo while
   another queued todo comes first in the person's order once per pair (`queue_told`, so the agent can
@@ -1235,7 +1250,7 @@ depend on it counts as told), and every call whose top-level `agent_id` was stop
   call from the script itself (exit 2, with "Stopped by <person> in hoop's Work view" on stderr), so a
   stopped agent never runs on silently, unless the tool gate is off in hoop's off list. Stops stay in
   the record and the file for good.
-- **Seen or overridden.** After each hook, `settle` in `src/work.ts` compares open changes with the
+- **Seen or overridden.** After each hook, `settle` in `src/work-settle.ts` compares open changes with the
   record: a removed todo deleted is `seen` and one started is `overridden`; an edit is `seen` when the
   todo reads the new subject and description or the gate told the agent, else `overridden` once it starts (a running
   todo's, once it is done); an add is `seen` once a todo with its subject (as above) appears after it,

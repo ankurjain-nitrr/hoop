@@ -11,13 +11,16 @@ import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
 import { isOff } from "./off.js";
+import { UpdateCheck, updateCommand } from "./update.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
-import { DISMISSED_MAX, editWork, KEEPS, linkTodos, removeWork, hasWork, workView } from "./work.js";
+import { editWork, KEEPS, removeWork, hasWork } from "./work.js";
+import { DISMISSED_MAX, linkTodos, workView } from "./work-view.js";
 import { claudeSessions, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { joinBlocks, requeue } from "./build.js";
 import type { DraftSeen } from "./build-drafts.js";
-import { type Sender, Steer } from "./steer.js";
+import { Steer } from "./steer.js";
+import type { Sender } from "./deliver.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
 import { isWaiting, lastWaited } from "./wait.js";
@@ -312,6 +315,8 @@ export type PagesOptions = {
   steerMs?: number;
   /** When hooks count from for the Work page's hook warning: this process's start, or a test's time. */
   hooksSince?: number;
+  /** The check for a newer hoop, which Home shows; only the pages process (`startWeb`) has one. */
+  updates?: UpdateCheck;
 };
 
 /** The page files as they were when the server started, so a server's pages always match its routes. */
@@ -788,6 +793,7 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           work: hasWork(hoop.store.home),
           // Diagrams off in hoop's off list: pages show a diagram's source and load no library.
           ...(isOff(hoop.store.home, "mermaid") ? { diagrams_off: true } : {}),
+          ...updateInfo(opts.updates, install, started.release),
         }),
     ],
     ["GET", reviewApi(), (_q, res, [id]) => send(res, 200, reviewView(hoop, id!, sessions))],
@@ -1027,10 +1033,20 @@ function logFailure(message: string, stack: unknown): void {
   Object.assign(seen, { at: Date.now(), repeats: 0 });
 }
 
-/** Serves the review pages on localhost, or resolves undefined when the port is taken. */
+/** A newer hoop than these pages run, with the command Home shows for it, or nothing. */
+function updateInfo(updates: UpdateCheck | undefined, install: string, current: string | undefined) {
+  const latest = updates?.available(current);
+  return latest ? { update: { latest, command: updateCommand(install) } } : {};
+}
+
+/**
+ * Serves the review pages on localhost, or resolves undefined when the port is taken. It checks for a
+ * newer hoop at most once a day, unless HOOP_NO_UPDATE_CHECK is set.
+ */
 export function startWeb(hoop = new Hoop(), port = PORT, opts: PagesOptions = {}): Promise<Server | undefined> {
+  const updates = opts.updates ?? (process.env.HOOP_NO_UPDATE_CHECK ? undefined : new UpdateCheck(hoop.store.home, opts.npm));
   return new Promise((resolve, reject) => {
-    const server = createWebServer(hoop, [], opts);
+    const server = createWebServer(hoop, [], { ...opts, ...(updates ? { updates } : {}) });
     server.once("error", (err: NodeJS.ErrnoException) => (err.code === "EADDRINUSE" ? resolve(undefined) : reject(err)));
     server.listen(port, "127.0.0.1", () => resolve(server));
   });

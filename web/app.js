@@ -353,7 +353,7 @@ export const receiptHtml = (key) => (fromFile() ? "" : `<span class="receipt" da
 /** The header's notice that Claude submitted a newer revision. It stays in the page, and the live region says it arrived. */
 function newRevisionInner() {
   const n = state.newRevision;
-  return n ? `<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
+  return n ? `${icons.info}<span>Revision ${n} is ready</span><button type="button" class="btn small primary" id="showRevision">Show it</button>` : "";
 }
 const newRevisionHtml = () => `<div class="new-revision" ${state.newRevision ? "" : "hidden"}>${newRevisionInner()}</div>`;
 
@@ -662,6 +662,8 @@ const home = {
   list: [],
   prs: [],
   actions: [],
+  // A newer hoop, as Home last loaded it (updateHtml).
+  update: undefined,
   // Your response times, per kind, from /api/loop-time (src/loop-time.ts).
   loop: [],
   renaming: null,
@@ -850,6 +852,17 @@ function listHtml() {
 }
 
 /**
+ * A newer hoop than these pages run, when the pages process found one: an info callout with its icon,
+ * as a new revision's, with the one command that updates and its Copy button. It is read as Home
+ * loads (`home.update`), never added to a Home already open, so nothing on the page moves under you.
+ */
+function updateHtml() {
+  const u = home.update;
+  if (!u) return "";
+  return `<p class="update-notice">${icons.info}<span>hoop ${esc(u.latest)} is available. To update, run <code class="resume">${esc(u.command)}</code></span><button type="button" class="btn small" data-copy="${esc(u.command)}" aria-label="Copy the command ${esc(u.command)}">Copy</button></p>`;
+}
+
+/**
  * Home's last section, Your response times, folded by default: one Stat line per kind, its name, then
  * its median with how many answers it is of, in --muted; and a muted closing line. It shows once any
  * request has an answer. The numbers stay on this machine.
@@ -923,7 +936,7 @@ function paintList() {
   const was = focusSpot(app);
   app.innerHTML = frame(
     "home",
-    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${tipsSwitchHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${listHtml()}</div>`,
+    `<div class="list"><header class="list-head"><h1>Home</h1>${notifyHtml()}${tipsSwitchHtml()}${home.list.length || home.prs.length || home.actions.length ? foldAllHtml() : ""}</header>${updateHtml()}${listHtml()}</div>`,
     state.info,
   );
   const focus = home.focus;
@@ -937,6 +950,8 @@ function paintList() {
 
 async function renderList() {
   home.list = await api("/api/reviews");
+  // A newer hoop shows as Home loads, from the info the pages last gave; a later one waits for the next load.
+  home.update = state.info?.update;
   home.shown = true;
   paintList();
   loadLoopTime();

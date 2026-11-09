@@ -16,7 +16,7 @@ import { ownerOf, sessionLabel } from "./owner.js";
 import { trackPr } from "./prs.js";
 import { exportedAnswers } from "./rules.js";
 import { Actions, validDescription, validDoneWhen, validReason, validTitle } from "./actions.js";
-import { workQueue } from "./work.js";
+import { workQueue } from "./work-view.js";
 import { actsAs } from "./claude-sessions.js";
 
 /**

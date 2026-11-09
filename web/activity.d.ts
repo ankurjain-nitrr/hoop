@@ -1,4 +1,5 @@
-import type { WorkSession, WorkTodo, ViewAgent } from "../src/work.js";
+import type { WorkTodo } from "../src/work.js";
+import type { ViewAgent, WorkSession } from "../src/work-view.js";
 
 type Health = { state: "running" | "waiting" | "stalled" | "notrunning"; note?: string };
 type TodoState = {
