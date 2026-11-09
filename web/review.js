@@ -1,5 +1,6 @@
 // Reviewing: line comments, suggestions, answers, threads with replies, and the verdict.
 import { pieceMarker } from "/blocks.js";
+import { docLineName } from "/doc-lines.js";
 import { SAVED_OFF, VERDICT, verdictNow } from "/status.js";
 import { renderLine } from "/inline.js";
 import { icons } from "/icons.js";
@@ -196,12 +197,9 @@ function sectionName(itemId) {
   return same.length > 1 ? `"${item.title}" (section ${items.indexOf(item) + 1})` : `"${item.title}"`;
 }
 
-/** The DOC anchors' names, by page index: the title, the TL;DR and the subtitle. */
-const DOC_LINES = ["title", "TL;DR", "subtitle"];
-
 /** What a comment at this anchor applies to: headings cover their section, the title, TL;DR and subtitle the document. */
 function scopeLabel(itemId, idx) {
-  if (itemId === "DOC") return `the ${DOC_LINES[idx]} (applies to the whole document)`;
+  if (itemId === "DOC") return `${docLineName(idx + 1)} (applies to the whole document)`;
   // A document's sections are named by their titles, since its IDs are hidden.
   const name = isDoc() ? sectionName(itemId) : itemId;
   if (idx === -1) return `${name} heading (applies to everything under it)`;
@@ -286,7 +284,7 @@ const isOutdated = (t) => changedSince(t, state.view.meta.revisions, textAt(t.it
 /** Where a thread sits. A thread on an automatic TL;DR, which has no box, shows the TL;DR's text. */
 function threadPlace(t) {
   if (t.item !== "DOC") return `Conversation on line ${t.line}`;
-  if (t.line !== 2) return `Conversation on the ${DOC_LINES[t.line - 1]}`;
+  if (t.line !== 2) return `Conversation on ${docLineName(t.line)}`;
   const shown = !state.view.doc.tldr_auto || state.tab === "changes";
   return `Conversation on the TL;DR${shown ? "" : `: <span class="quote-inline">${esc(state.view.doc.tldr)}</span>`}`;
 }
@@ -361,7 +359,7 @@ const ASK_STATE = { open: "Waiting for your answer", answered: "Answered", close
 
 /** Which line a quick question is on, in words. */
 function askWhere(a) {
-  if (a.item === "DOC") return `the ${DOC_LINES[a.line - 1]}`;
+  if (a.item === "DOC") return docLineName(a.line);
   return a.line === 0 ? "the heading" : `line ${a.line}`;
 }
 
@@ -1164,7 +1162,7 @@ function placed(s, item, line) {
 
 /** Where a stale draft was, in its own revision. */
 function wasAt(s) {
-  if (s.item === "DOC") return `the ${DOC_LINES[s.line]}`;
+  if (s.item === "DOC") return docLineName(s.line + 1);
   return s.line === -1 ? "a heading" : `line ${s.line + 1}`;
 }
 

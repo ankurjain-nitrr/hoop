@@ -4,6 +4,7 @@
 // comment on.
 import { type Item, itemLines, type ReviewDoc } from "./contract.js";
 import { count } from "./util.js";
+import { DOC_LINES } from "../web/doc-lines.js";
 
 /** One section that changed, with how many of its lines are new and how many are gone. */
 type SectionChange = { section: string; title: string; lines_added: number; lines_removed: number; renamed_from?: string };
@@ -82,7 +83,7 @@ export function revisionChanges(before: ReviewDoc, after: ReviewDoc, since: numb
   const moved = shared(after.items)
     .filter((id, k) => order[k] !== id)
     .map((id) => ({ section: id, title: after.items.find((i) => i.id === id)!.title }));
-  const document = (["title", "tldr", "subtitle"] as const).filter((k) => before[k] !== after[k] && !(k === "tldr" && after.tldr_auto));
+  const document = DOC_LINES.map((l) => l.field).filter((k) => before[k] !== after[k] && !(k === "tldr" && after.tldr_auto));
   return {
     since_revision: since,
     added,
