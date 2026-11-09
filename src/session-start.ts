@@ -1,6 +1,8 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { askState, ownedBy, reviewStatus, type StatusKey, threadViews } from "./rules.js";
+import { askState, reviewStatus, type StatusKey } from "./rules.js";
+import { ownedBy } from "./claude-sessions.js";
+import { threadViews } from "./threads.js";
 import { receiptKey, receivedBy, type ReviewMeta, type Store } from "./store.js";
 import { clip, isList, isRecord, tryReadJson, writeJson } from "./util.js";
 import { workQueue } from "./work-view.js";

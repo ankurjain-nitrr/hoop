@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type Owner, type OwnerProcess, validSession } from "./owner.js";
 import { alive, lstartTimes, processStarts, START_MARGIN_MS } from "./proc.js";
 import { claudeDir, opt, readJsonDir } from "./util.js";
+import type { ReviewMeta } from "./store.js";
 
 /** A Claude Code session as `<claude dir>/sessions/<pid>.json` describes it. */
 export type ClaudeSession = {
@@ -123,3 +124,6 @@ export function actsAs(owner: Owner | undefined, session: string | null | undefi
   const now = processOf(session, sessions);
   return Boolean(now && now.pid === p.pid && now.start === p.start);
 }
+
+/** Whether a session is the review's owner: its session, an earlier one before `/clear`, or the one in its process since. */
+export const ownedBy = (meta: ReviewMeta, session: string) => Boolean(meta.owner && (meta.owners?.includes(session) || actsAs(meta.owner, session)));
