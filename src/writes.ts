@@ -91,11 +91,18 @@ type WriteContext = { done?: () => DoneLook };
 
 type Write = { key: (body: Body) => string; run: (store: Store, body: Body, ctx?: WriteContext) => unknown };
 
+/** The queue an agent operation's write waits in: pull requests, action items, or its review's (a new review's own). */
+function opKey(b: Body): string {
+  if (b.name === "track_pr") return "prs";
+  if (b.name === "action" || b.name === "action_withdraw") return ACTIONS_KEY;
+  return reviewKey(obj(b.input)) ?? "new";
+}
+
 /** Each write a session or command can send. Every one validates what it was sent. */
 export const WRITES: Record<string, Write> = {
   /** An agent operation that writes (`writes` in `OPS`), run for the caller's session and place. */
   op: {
-    key: (b) => (b.name === "track_pr" ? "prs" : b.name === "action" || b.name === "action_withdraw" ? ACTIONS_KEY : (reviewKey(obj(b.input)) ?? "new")),
+    key: (b) => opKey(b),
     run: (store, b) => {
       const op = OPS.find((o) => o.name === b.name && o.writes);
       if (!op) throw new HoopError(`no operation ${String(b.name)} to run in the pages process`);
