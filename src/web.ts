@@ -28,6 +28,7 @@ import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.j
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
 import { loopTimes, waits } from "./loop-time.js";
 import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
+import { DOC_LINES } from "../web/doc-lines.js";
 
 const WEB = new URL("../web/", import.meta.url);
 const STATIC: Record<string, [string, string]> = {
@@ -408,7 +409,7 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     history[n] = Object.fromEntries([
       ...d.items.map((i) => [i.id, itemLines(i)]),
       ...d.items.map((i) => [`#${i.id}`, i.title]),
-      [DOC, [d.title, d.tldr, d.subtitle]],
+      [DOC, DOC_LINES.map((l) => d[l.field])],
     ]);
   }
   const withLines = (d: typeof doc) => d.items.map((item) => ({ ...item, lines: itemLines(item), blocks: itemBlocks(item) }));
