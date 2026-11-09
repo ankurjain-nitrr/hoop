@@ -1,5 +1,6 @@
 import { anchorText, DOC, itemLines, type ReviewDoc } from "./contract.js";
 import { HoopError } from "./util.js";
+import { docLineName } from "../web/doc-lines.js";
 
 export type Place = { item: string; line: number; start: number };
 
@@ -20,7 +21,7 @@ export function placesOf(doc: ReviewDoc, words: string, item?: string): Place[] 
   });
 }
 
-const where = (p: Place) => (p.item === DOC ? ["the title", "the TL;DR", "the subtitle"][p.line - 1] : `${p.item} line ${p.line}`);
+const where = (p: Place) => (p.item === DOC ? docLineName(p.line) : `${p.item} line ${p.line}`);
 
 /**
  * The anchor for the exact words a comment or edit names, in place of a line number. `item`

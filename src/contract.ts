@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { blockKinds, SUBTITLE_MAX, subtitleWords, type Block } from "../web/blocks.js";
+import { choiceLine, docLineText } from "../web/doc-lines.js";
 
 const id = z.string().regex(/^[A-Za-z][A-Za-z0-9-]*$/, "use letters, digits and hyphens, starting with a letter");
 
@@ -265,8 +266,7 @@ export function withoutSection(doc: ReviewDoc, itemId: string): Item[] {
 
 /** The text at an anchor, or undefined if the anchor doesn't exist in doc. */
 export function anchorText(doc: ReviewDoc, item: string, line: number): string | undefined {
-  // The document's own lines: 1 is the title, 2 the TL;DR, 3 the subtitle.
-  if (item === DOC) return [undefined, doc.title, doc.tldr, doc.subtitle][line];
+  if (item === DOC) return docLineText(doc, line);
   const it = doc.items.find((i) => i.id === item);
   if (!it) return undefined;
   return line === 0 ? it.title : itemLines(it)[line - 1];
@@ -280,7 +280,7 @@ export function itemLines(item: Item): string[] {
     .filter(Boolean);
   if (item.type === "question") {
     if (!lines.length) lines.push(item.title);
-    for (const c of item.choices ?? []) lines.push(`${c.id}) ${c.label}${c.recommended ? " (recommended)" : ""}`);
+    for (const c of item.choices ?? []) lines.push(choiceLine(c));
   }
   if (item.check) lines.push(`Check: ${item.check}`);
   if (!lines.length) lines.push(item.title);
