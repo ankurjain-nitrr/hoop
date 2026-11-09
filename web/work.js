@@ -24,7 +24,7 @@ import {
 } from "./activity.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldedByDefault, foldSummary, tally, unfold } from "./fold.js";
 import { inlineHtml, titleHtml } from "./inline.js";
-import { statusBadge, WORK } from "./status.js";
+import { MESSAGES_OFF, statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
@@ -148,6 +148,7 @@ const delivery = (c, s) => {
   const answered = c.replies?.at(-1);
   if (answered) return `<span class="delivery d-seen">${icons.check}Answered by Claude ${time(answered.at)}</span>`;
   if (missed(c, s)) return `<span class="delivery d-overridden">${icons.warning}Not read yet: the session's turn ended without it</span>`;
+  if (c.delivery === "waiting" && work.messagesOff) return `<span class="delivery d-waiting">${icons.clock}${MESSAGES_OFF}</span>`;
   const at = DELIVERY_AT[c.delivery]?.(c);
   return `<span class="delivery d-${esc(c.delivery)}">${icons[DELIVERY_ICON[c.delivery]] ?? ""}${DELIVERY[c.delivery] ?? esc(c.delivery)}${at ? ` ${time(at)}` : ""}</span>`;
 };
@@ -707,8 +708,10 @@ function sessionHtml(s, n, now) {
   const details = `<span class="sid mono" title="Session ID">${esc(s.id.slice(0, 8))}</span>${s.folder ? `<span class="place mono" title="The folder the session works in">${esc(s.folder)}</span>` : ""}${statusBadge(s.state, WORK)}`;
   const agents = agentsHtml(s, now);
   const shared = sharedSource(s);
+  // Why changes wait for the gate: messages are off in hoop's off list, or the session takes none.
+  const why = work.messagesOff ? `${MESSAGES_OFF}.` : "This session can't take messages now: it isn't running, or its Claude Code has no messaging socket.";
   const waits = s.changes.some((c) => c.delivery === "waiting")
-    ? `<p class="gate-note">This session can't take messages now: it isn't running, or its Claude Code has no messaging socket. Changes wait for the gate, hoop's hook that stops Claude from starting a changed todo and tells it why, and refuses a stopped subagent's tool calls.</p>`
+    ? `<p class="gate-note">${why} Changes wait for the gate, hoop's hook that stops Claude from starting a changed todo and tells it why, and refuses a stopped subagent's tool calls.</p>`
     : "";
   // The session, its todos and its subagents each fold, kept by session ID.
   const key = `work:${s.id}`;
@@ -862,6 +865,8 @@ async function load() {
     if (!Array.isArray(body.sessions)) throw new Error("the reply lists no sessions");
     work.sessions = body.sessions;
     work.hooks = body.hooks ?? [];
+    // Messages into a session off in hoop's off list: a change waits for the gate, and says why.
+    work.messagesOff = Boolean(body.messages_off);
     work.error = "";
     work.read = true;
   } catch (err) {
@@ -926,11 +931,10 @@ async function sendChange(key, change) {
   const body = await post(`/api/work/${encodeURIComponent(session)}/changes`, { changes: [change] });
   if (body.session) work.sessions = work.sessions.map((s) => (s.id === session ? body.session : s));
   const c = body.changes?.[0];
-  announce(
-    c?.delivery === "waiting"
-      ? "Saved. The session can't take messages now, so the change waits for the gate."
-      : "Saved. It goes to the session in a few seconds.",
-  );
+  const waits = work.messagesOff
+    ? `${MESSAGES_OFF}, so the change waits for the gate.`
+    : "The session can't take messages now, so the change waits for the gate.";
+  announce(c?.delivery === "waiting" ? `Saved. ${waits}` : "Saved. It goes to the session in a few seconds.");
 }
 
 /** The change a form or confirmation makes. */

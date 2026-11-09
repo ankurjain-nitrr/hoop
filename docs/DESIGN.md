@@ -992,8 +992,14 @@ comment turns a switch off; odd spacing leaves it on). Each script checks its sw
 `hoop.sh`: a hook that is off exits 0 with no output, so Claude Code goes on as without it, and
 never starts hoop or Node.js. A file rather than environment variables, since a hook gets Claude
 Code's environment and the pages process the environment of whichever session started it; one
-file reaches every session and process alike, and the pages process can read it the same way
-(`test/off-switches.test.ts`).
+file reaches every session and process alike, and the pages process reads it the same way
+(`src/off.ts`, `test/off-switches.test.ts`). Two switches act in the pages process: with
+`messages` off, every message into a session (a review, a close, a build request, an action
+item's close) records the delivery `off` and sends nothing, and Steer treats every session as
+unreachable, so Work changes wait for the gate; `/api/work` carries `messages_off` so Work says
+why. With `mermaid` off, `/api/info` carries `diagrams_off`; `mountDiagrams` asks for it before
+making any frame, and shows each diagram's source under a muted note, which isn't a diagram error,
+so nothing tells Claude of it.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|
