@@ -267,15 +267,15 @@ const RESPONDED = { revised: "Revised", replied: "Answered" };
 
 /**
  * A read review's receipt: what Claude did after reading it ("Revised by Claude 21:10", "Answered by
- * Claude 21:06"), else when it read it, with "No response yet" while the review asks it to act. Only a
- * review's own page knows its responses; a quick question's card says only when Claude read it.
+ * Claude 21:06"), else when it read it, with "No response yet" while the server says the review waits
+ * on Claude's response. A review with no entry in `responses` (an approval, a closed review, a
+ * session's own comment, or a quick question's card) says only when Claude read it.
  */
 function readText(r, key, of) {
   const who = r.by === "agent" ? "Claude" : r.by;
   const done = of.responses?.[key];
   if (done && RESPONDED[done.kind]) return `${RESPONDED[done.kind]} by ${who} ${readAt(done.at)}`;
-  const waits = of.responses && of.asks_to_act?.[key] !== false;
-  return `Read by ${who} ${readAt(r.at)}${waits ? " · No response yet" : ""}`;
+  return `Read by ${who} ${readAt(r.at)}${done?.kind === "none" ? " · No response yet" : ""}`;
 }
 
 /**
@@ -1649,10 +1649,11 @@ function watchReceipts() {
     const v = state.view;
     const keys = [...document.querySelectorAll("[data-receipt]")].map((el) => el.dataset.receipt);
     if (!v || document.visibilityState !== "visible" || keys.every((k) => v.receipts?.[k])) return;
-    const { receipts } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
+    const { receipts, responses } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
     if (!receipts || state.view !== v) return;
     const sent = sentUnread(v);
     v.receipts = receipts;
+    if (responses) v.responses = responses;
     // The agent line shows again once Claude read the review, saying what it does now.
     if (sent && !sentUnread(v)) await askAgent();
     if (state.view === v) showReceipts();

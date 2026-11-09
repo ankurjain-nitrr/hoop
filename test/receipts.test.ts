@@ -156,15 +156,13 @@ test("responses: Claude's first revision after a review it read, else its first 
   const meta = () => hoop.store.meta(review_id);
   assert.deepEqual(responses(hoop, meta()), {}, "nothing before Claude reads it");
   hoop.receive(review_id);
-  assert.deepEqual(responses(hoop, meta()), {}, "read, no response yet");
+  assert.deepEqual(responses(hoop, meta()), { "1.0": { kind: "none" } }, "read, no response yet");
   const thread = hoop.store.feedback(review_id, 1)[0]!.comments[0]!.thread!;
   hoop.reply(thread, "Yes, inclusive.");
-  const replied = responses(hoop, meta())["1.0"]!;
-  assert.deepEqual([replied.kind, replied.at], ["replied", hoop.store.replies(review_id)[0]!.at]);
+  assert.deepEqual(responses(hoop, meta())["1.0"], { kind: "replied", at: hoop.store.replies(review_id)[0]!.at });
   // A revision Claude submits after it outranks the reply.
   hoop.submit({ ...example(), title: "Order export: v2", review_id }, 1);
-  const revised = responses(hoop, meta())["1.0"]!;
-  assert.deepEqual([revised.kind, revised.at], ["revised", hoop.store.revisionAt(review_id, 2)]);
+  assert.deepEqual(responses(hoop, meta())["1.0"], { kind: "revised", at: hoop.store.revisionAt(review_id, 2) });
   // A revision a reviewer's Apply made is no response from Claude.
   const other = reviewed().hoop;
   const id = other.store.list()[0]!.id;
@@ -181,7 +179,39 @@ test("responses: Claude's first revision after a review it read, else its first 
     find: "a",
     replace: "b",
   });
-  assert.deepEqual(responses(other, other.store.meta(id)), {});
+  assert.deepEqual(responses(other, other.store.meta(id)), { "1.0": { kind: "none" } });
+});
+
+test("regression: an approval Claude read, then replied after, has no response to wait for", () => {
+  const hoop = new Hoop(new Store(tempHome()));
+  const { review_id } = hoop.submit(example());
+  hoop.review(review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
+  const thread = hoop.store.feedback(review_id, 1)[0]!.comments[0]!.thread!;
+  hoop.receive(review_id);
+  hoop.review(review_id, { verdict: "approved", reviewer: "ana", comments: [], resolved_threads: [thread] });
+  hoop.receive(review_id);
+  hoop.reply(thread, "Thanks.");
+  const out = responses(hoop, hoop.store.meta(review_id));
+  assert.equal(out["1.1"], undefined, "the approval asks nothing, so it is never answered");
+  assert.deepEqual(out["1.0"]!.kind, "replied");
+});
+
+test("regression: a reply before Claude read a review isn't its response to it", () => {
+  const { hoop, review_id } = reviewed();
+  const thread = hoop.store.feedback(review_id, 1)[0]!.comments[0]!.thread!;
+  // An answer written before the read, as from a wait still running: no response to what it hadn't read.
+  hoop.store.addReply(review_id, { thread, author: "claude", body: "Early.", at: new Date(Date.now() - 1000).toISOString() });
+  hoop.receive(review_id);
+  assert.deepEqual(responses(hoop, hoop.store.meta(review_id)), { "1.0": { kind: "none" } });
+});
+
+test("regression: a session's own comment asks for no response", () => {
+  const { hoop, review_id } = reviewed();
+  hoop.receive(review_id);
+  new Hoop(hoop.store, "other-session-4444").comment(review_id, { item: "FR-3", line: 1, body: "Agreed." });
+  hoop.receive(review_id);
+  const out = responses(hoop, hoop.store.meta(review_id));
+  assert.deepEqual(Object.keys(out), ["1.0"], "only the person's review waits on a response");
 });
 
 test("the receipt says what Claude did after reading a review: answered, then revised; an approval waits for nothing", { skip: BROWSER_SKIP }, () =>
