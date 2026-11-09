@@ -269,12 +269,10 @@ export const withdrawWords = (c: WorkChange) =>
     : `Withdrew the todo ${quote(c.text!)} added earlier: don't create it, or delete it with TaskUpdate (status "deleted") if you already did.`;
 
 /** What TaskUpdate should set for an edit. */
-export const editTask = (c: WorkChange) =>
-  c.description === undefined
-    ? "set its subject to the new text"
-    : c.text !== c.subject
-      ? "set its subject and description to the new text"
-      : "set its description to the new text";
+export function editTask(c: WorkChange): string {
+  if (c.description === undefined) return "set its subject to the new text";
+  return c.text !== c.subject ? "set its subject and description to the new text" : "set its description to the new text";
+}
 
 /** A description quoted whole, its line breaks kept so lists and links read as written. */
 export const quoteBlock = (s: string) => `"${s.trim()}"`;

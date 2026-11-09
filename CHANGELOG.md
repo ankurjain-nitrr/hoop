@@ -12,6 +12,11 @@ All notable changes to hoop are listed here. The format follows
   session (Claude reads what you sent with `hoop_wait` or `hoop_feedback`, and Work's changes wait
   for the gate), and `mermaid` stops pages loading Mermaid, showing each diagram's source. The pages
   say so where it applies (#212).
+- Claude Code's permission prompts can be answered from hoop too, once you turn it on in
+  `hoop init` (`--permission-prompts`; it adds `permission_prompts` to `~/.hoop/on`). The plugin's
+  PermissionRequest hook keeps the prompt for hoop's pages and waits; the terminal still asks, and
+  the first answer wins. hoop never allows anything by itself. The page that shows the prompts
+  follows (#212).
 - A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
   issue on a release Monday when one is due; it publishes nothing (#212).
 
