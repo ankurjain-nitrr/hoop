@@ -25,6 +25,7 @@ import { isDoneInput } from "./done.js";
 import { isGateable } from "./stop.js";
 import { hookFields, parseHookInput, readHookInput } from "./hook-input.js";
 import { sessionNote, sessionStartOutput } from "./session-start.js";
+import { permissionHook } from "./permission-hook.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
@@ -41,13 +42,16 @@ const USAGE = `Usage: hoop [<command>]
   [--no-browser]
          With no command: open Home, everything waiting on you across every session, in the browser,
          and print its link (--no-browser skips the browser).
-  init [--print] [--yes | --no] [--agents | --no-agents] [--no-browser]
+  init [--print] [--yes | --no] [--agents | --no-agents] [--permission-prompts | --no-permission-prompts] [--no-browser]
          Install hoop's Claude Code plugin (its MCP server and hooks) with claude, or print the commands.
          Then turn on Claude Code's todo tools for the Work view (CLAUDE_CODE_ENABLE_TODO_TOOLS=1 in
          its settings): it asks on a terminal; --yes or --no answers; otherwise it only says how.
          Then add hoop to each other agent found here (Codex CLI, Cursor, OpenCode, Gemini CLI) in its
          user config: it asks about each on a terminal; --agents or --no-agents answers for all;
          otherwise it only says what it found. --print lists them and changes nothing.
+         Then ask whether to answer Claude Code's permission prompts from hoop's pages too (off until
+         you say yes, which adds permission_prompts to ~/.hoop/on); --permission-prompts or
+         --no-permission-prompts answers.
          Last, open a sample review to try the review page on, in the browser (--no-browser skips that).
   mcp    Start the MCP server on stdio and the review pages (for: claude mcp add hoop -- hoop mcp)
   serve  Serve the review pages only, on http://localhost:$HOOP_PORT (default 4747)
@@ -86,6 +90,10 @@ const USAGE = `Usage: hoop [<command>]
   done-gate
          Claude Code's hook when a todo is marked completed: refuse it once while a review it links
          to isn't approved or a pull request it owns isn't merged. Prints "refuse: <reason>" or nothing.
+  permission-hook
+         Claude Code's PermissionRequest hook, while permission_prompts is in ~/.hoop/on: shows the
+         prompt on hoop's pages and waits for Allow once or Deny there, or an answer in the terminal,
+         which still asks. Prints the page's answer as the hook's decision, or nothing.
   session-start
          Claude Code's hook when a session starts, resumes, clears or compacts: print the session's queued
          todos, unread feedback and reviews waiting on Claude as context, or nothing. Always exits 0.
@@ -306,26 +314,32 @@ function defaultRepo() {
   if (root) process.env.HOOP_REPO_DIR = root;
 }
 
-/** `hoop init`: refuses flags it doesn't know, --yes with --no, and --agents with --no-agents. */
+const INIT_USAGE = "usage: hoop init [--print] [--yes | --no] [--agents | --no-agents] [--permission-prompts | --no-permission-prompts] [--no-browser]";
+const INIT_FLAGS = ["--print", "--yes", "--no", "--agents", "--no-agents", "--permission-prompts", "--no-permission-prompts", "--no-browser"];
+
+/** `hoop init`: refuses flags it doesn't know, and each flag with its opposite. */
 async function initCommand(argv: string[]) {
   const flags = argv.slice(1);
   const both = (a: string, b: string) => flags.includes(a) && flags.includes(b);
   if (
-    flags.some((f) => !["--print", "--yes", "--no", "--agents", "--no-agents", "--no-browser"].includes(f)) ||
+    flags.some((f) => !INIT_FLAGS.includes(f)) ||
     both("--yes", "--no") ||
-    both("--agents", "--no-agents")
+    both("--agents", "--no-agents") ||
+    both("--permission-prompts", "--no-permission-prompts")
   ) {
-    process.stderr.write("usage: hoop init [--print] [--yes | --no] [--agents | --no-agents] [--no-browser]\n");
+    process.stderr.write(`${INIT_USAGE}\n`);
     process.exitCode = 2;
     return;
   }
   const todo = (["yes", "no"] as const).find((answer) => flags.includes(`--${answer}`));
   const agents = (["yes", "no"] as const).find((answer) => flags.includes(answer === "yes" ? "--agents" : "--no-agents"));
+  const permissions = (["yes", "no"] as const).find((answer) => flags.includes(answer === "yes" ? "--permission-prompts" : "--no-permission-prompts"));
   const browser = !flags.includes("--no-browser");
   process.exitCode = await init({
     print: flags.includes("--print"),
     ...(todo ? { todo } : {}),
     ...(agents ? { agents } : {}),
+    ...(permissions ? { permissions } : {}),
     sample: () => openSample(browser),
   });
 }
@@ -505,6 +519,31 @@ async function doneGateCommand() {
   }
 }
 
+/** How long `hoop permission-hook` waits for an answer before handing the prompt to the terminal. */
+const PERMISSION_WAIT_S = 570;
+
+async function permissionHookCommand() {
+  // Claude Code's PermissionRequest hook, while permission prompts are on: the first answer, on a
+  // page or in the terminal, wins. Any error prints nothing, which leaves the prompt to the terminal.
+  try {
+    const input = hookInput();
+    const waitS = Number(process.env.HOOP_PERMISSION_WAIT ?? PERMISSION_WAIT_S);
+    const out = await permissionHook(input, {
+      home: hoopHome(),
+      remote: new Remote(hoopHome()),
+      waitMs: (waitS > 0 ? waitS : PERMISSION_WAIT_S) * 1000,
+      onStop: (stop) => {
+        // Claude Code ends the hook when the terminal's answer came first.
+        const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT", "SIGHUP"];
+        for (const signal of signals) process.once(signal, () => void stop().finally(() => process.exit(0)));
+      },
+    });
+    if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
+  } catch {
+    /* unreadable input, or no pages process: the terminal asks */
+  }
+}
+
 async function sessionStartCommand() {
   // Claude Code's SessionStart hook: it reads hoop's files, never starts the pages process, and any
   // error, or no hoop folder, prints nothing.
@@ -573,6 +612,7 @@ const COMMANDS = new Map<string, (argv: string[]) => Promise<void>>([
   ["work-gate", workGateCommand],
   ["stop-gate", stopGateCommand],
   ["done-gate", doneGateCommand],
+  ["permission-hook", permissionHookCommand],
   ["session-start", sessionStartCommand],
   ["pre-compact", preCompactCommand],
 ]);

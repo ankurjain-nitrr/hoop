@@ -11,6 +11,8 @@ import { DOC, type Feedback, itemBlocks, itemLines, type ReviewDoc } from "./con
 import { Hoop, HoopError, PORT } from "./hoop.js";
 import { liveSessions, storeKey } from "./sessions.js";
 import { codeId, ownInstall, release } from "./version.js";
+import { answerPermission, listPermissions, prunePermissions } from "./permissions.js";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { UpdateCheck, updateCommand } from "./update.js";
 import { type Applied, type Closed, receiptKey, receivedBy } from "./store.js";
 import { dropStamps, hookWarnings, lastStamp } from "./hook-health.js";
@@ -24,7 +26,7 @@ import type { Sender } from "./deliver.js";
 import { recordStates } from "./history.js";
 import { agentState, deliverAction, deliverBuild, deliverClose, deliverReview } from "./wake.js";
 import { isWaiting, lastWaited } from "./wait.js";
-import { ACTIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
+import { ACTIONS_KEY, PERMISSIONS_KEY, Queue, STORE_HEADER, WRITE_PATH, WRITES } from "./writes.js";
 import { type ActionItem, actionLink, ActionChecks, Actions, type ActionState, type NpmRunner, validReason } from "./actions.js";
 import { loopTimes, waits } from "./loop-time.js";
 import { childPattern, REVIEW_ID_PATTERN } from "./ids.js";
@@ -572,7 +574,13 @@ function trail(hoop: Hoop, id: string): TrailEntry[] {
 }
 
 function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [string, RegExp, Handler][] {
-  const page = (_req: IncomingMessage, res: ServerResponse) => send(res, 200, files.get("index.html")!, "text/html; charset=utf-8");
+  // A secret of this process's, which only a page it served holds: an HttpOnly cookie, sent only to
+  // the permission answers, never written to disk or into any reply's body.
+  const answerKey = randomBytes(32).toString("hex");
+  const page = (_req: IncomingMessage, res: ServerResponse) => {
+    res.setHeader("set-cookie", `${ANSWER_COOKIE}=${answerKey}; HttpOnly; SameSite=Strict; Path=/api/permissions`);
+    send(res, 200, files.get("index.html")!, "text/html; charset=utf-8");
+  };
   const install = ownInstall();
   const started = { release: release(install), code: codeId(install) };
   // Pull request states are read from gh only while Home asks for them.
@@ -738,6 +746,29 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
           200,
           actions.list().map((i) => actionView(hoop, i, live, running, prStates)),
         );
+      },
+    ],
+    // Permission prompts waiting on the person, and how the latest ones were answered (src/permissions.ts).
+    [
+      "GET",
+      /^\/api\/permissions$/,
+      async (_q, res) => send(res, 200, await queue.run(PERMISSIONS_KEY, () => (prunePermissions(hoop.store.home), listPermissions(hoop.store.home)))),
+    ],
+    // The person's Allow once or Deny (with an optional reason Claude reads). The first answer wins.
+    [
+      "POST",
+      /^\/api\/permissions\/(pm_[a-z0-9]+)$/,
+      async (req, res, [id]) => {
+        const refused = answerRefusal(req, answerKey);
+        if (refused) return send(res, 403, { error: refused });
+        const body = await readJson(req);
+        try {
+          send(res, 200, await queue.run(PERMISSIONS_KEY, () => answerPermission(hoop.store.home, id!, body, currentUser())));
+        } catch (err) {
+          const state = err instanceof HoopError ? err.detail?.state : undefined;
+          if (!state) throw err;
+          send(res, 409, { error: err instanceof Error ? err.message : String(err), state });
+        }
       },
     ],
     // The person ticks a manual item done, says Won't do with a reason, or undoes their Done.
@@ -973,6 +1004,23 @@ async function route(req: IncomingMessage, res: ServerResponse, path: string, fi
     if (m && req.method === method) return await handler(req, res, m.slice(1));
   }
   send(res, 404, { error: `no route for ${req.method} ${path}` });
+}
+
+/** The cookie that carries the pages process's answer key to the permission answers. */
+const ANSWER_COOKIE = "hoop_answer";
+
+/**
+ * Why an answer to a permission prompt is refused: only a page this process served answers, from
+ * the browser. It needs the page's own Origin (the host it asked, already one of the allowed ones),
+ * the browser's word that the request is same-origin, and the page's answer key cookie. A program of
+ * the person's own that forges all three can still answer: hoop can't stop the person's processes.
+ */
+function answerRefusal(req: IncomingMessage, key: string): string | undefined {
+  if (!req.headers.origin || req.headers.origin !== `http://${req.headers.host}`) return "answers come only from hoop's pages";
+  if (req.headers["sec-fetch-site"] !== "same-origin") return "answers come only from hoop's pages, in a browser";
+  const sent = /(?:^|;\s*)hoop_answer=([0-9a-f]{64})(?:;|$)/.exec(String(req.headers.cookie ?? ""))?.[1];
+  if (!sent || !timingSafeEqual(Buffer.from(sent), Buffer.from(key))) return "answers come only from a page these pages served: reload it";
+  return undefined;
 }
 
 /** Why a request that writes is refused: another site's Origin, or a body that isn't JSON. */
