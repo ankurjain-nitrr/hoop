@@ -26,6 +26,7 @@ import { isGateable } from "./stop.js";
 import { hookFields, parseHookInput, readHookInput } from "./hook-input.js";
 import { sessionNote, sessionStartOutput } from "./session-start.js";
 import { permissionHook } from "./permission-hook.js";
+import { resumedFrom } from "./resumes.js";
 
 /** How long `hoop work-hook` waits on the pages process before it drops the record. */
 const WORK_HOOK_MS = 1500;
@@ -33,6 +34,8 @@ const WORK_HOOK_MS = 1500;
 const STOP_GATE_MS = 2000;
 /** How long `hoop pre-compact` waits on the pages process before it drops the snapshot. */
 const PRE_COMPACT_MS = 2000;
+/** How long `hoop session-start` waits on the pages process to link a resumed session. */
+const RESUME_MS = 2000;
 /** How long `hoop done-gate` waits on the pages process, which reads the todo's pull requests from gh for up to 2 s. */
 const DONE_GATE_MS = 3500;
 const OPEN_USAGE = "open <file.md> [--title <t>] [--no-browser]";
@@ -545,11 +548,16 @@ async function permissionHookCommand() {
 }
 
 async function sessionStartCommand() {
-  // Claude Code's SessionStart hook: it reads hoop's files, never starts the pages process, and any
-  // error, or no hoop folder, prints nothing.
+  // Claude Code's SessionStart hook: it reads hoop's files, and any error, or no hoop folder, prints
+  // nothing. A resume first links the new session to the one it continues, through the pages process,
+  // which it starts when none answers: the note then lists that session's open work too.
   try {
     const input = hookInput();
     if (!existsSync(hoopHome())) return;
+    if (resumedFrom(input))
+      await new Remote(hoopHome(), PORT, { timeoutMs: RESUME_MS }).post("resume", { input }).catch(() => {
+        /* no pages process: the resumed session stays unlinked */
+      });
     const out = sessionStartOutput(sessionNote(new Store(hoopHome(), { readOnly: true }), input));
     if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
   } catch {

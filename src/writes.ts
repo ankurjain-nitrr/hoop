@@ -16,6 +16,7 @@ import { isReviewId, reviewOfChild } from "./ids.js";
 import { isList, obj } from "./util.js";
 import { hookFields } from "./hook-input.js";
 import { askPermission, permissionsGate, settlePermission } from "./permissions.js";
+import { recordResume, resumedFrom } from "./resumes.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -198,6 +199,15 @@ export const WRITES: Record<string, Write> = {
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       return { saved: Boolean(saveSnapshot(store, b.input)) };
+    },
+  },
+  /** A resumed session's link to the session it continues, from its SessionStart hook's input (src/resumes.ts). */
+  resume: {
+    key: () => "resumes",
+    run: (store, b) => {
+      const session = hookFields(b.input).session;
+      const earlier = resumedFrom(b.input);
+      return { linked: Boolean(session && earlier && recordResume(store.home, session, earlier)), ...(earlier ? { earlier } : {}) };
     },
   },
   /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */
