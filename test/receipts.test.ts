@@ -8,6 +8,7 @@ import { Store } from "../src/store.js";
 import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, pagesFor, hoopArgs, withServer, op, hoopCli } from "./helpers.js";
 import { parseMarkdown } from "../src/markdown.js";
 import { waitForReview } from "../src/wait.js";
+import { responses } from "../src/web.js";
 import type { Page } from "playwright-core";
 import { jsonLine, writeTranscript } from "./builders.js";
 
@@ -145,8 +146,69 @@ test("the page says a review is not read yet, then when Claude read it, without 
     const at = new Date(hoop.store.receipts(review_id)["1.0"]!.at);
     const time = await clock(page, at.toISOString());
     await page.getByText(`Latest review: Read by Claude ${time}`).waitFor({ timeout: 5000 });
-    assert.equal(await page.locator(".trail-list .receipt").innerText(), `Read by Claude ${time}`);
+    assert.equal(await page.locator(".trail-list .receipt").innerText(), `Read by Claude ${time} · No response yet`);
     assert.equal(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded), true, "the page wasn't reloaded");
+  }),
+);
+
+test("responses: Claude's first revision after a review it read, else its first reply; a reviewer's Apply isn't one", () => {
+  const { hoop, review_id } = reviewed();
+  const meta = () => hoop.store.meta(review_id);
+  assert.deepEqual(responses(hoop, meta()), {}, "nothing before Claude reads it");
+  hoop.receive(review_id);
+  assert.deepEqual(responses(hoop, meta()), {}, "read, no response yet");
+  const thread = hoop.store.feedback(review_id, 1)[0]!.comments[0]!.thread!;
+  hoop.reply(thread, "Yes, inclusive.");
+  const replied = responses(hoop, meta())["1.0"]!;
+  assert.deepEqual([replied.kind, replied.at], ["replied", hoop.store.replies(review_id)[0]!.at]);
+  // A revision Claude submits after it outranks the reply.
+  hoop.submit({ ...example(), title: "Order export: v2", review_id }, 1);
+  const revised = responses(hoop, meta())["1.0"]!;
+  assert.deepEqual([revised.kind, revised.at], ["revised", hoop.store.revisionAt(review_id, 2)]);
+  // A revision a reviewer's Apply made is no response from Claude.
+  const other = reviewed().hoop;
+  const id = other.store.list()[0]!.id;
+  other.receive(id);
+  other.store.addRevision(id, other.store.revision(id));
+  other.store.addApplied(id, {
+    thread: "th_x",
+    revision: 2,
+    by: "ana",
+    at: new Date().toISOString(),
+    kind: "suggestion",
+    item: "FR-3",
+    line: 1,
+    find: "a",
+    replace: "b",
+  });
+  assert.deepEqual(responses(other, other.store.meta(id)), {});
+});
+
+test("the receipt says what Claude did after reading a review: answered, then revised; an approval waits for nothing", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    const { review_id } = reviewed(hoop);
+    new Hoop(hoop.store, null).receive(review_id);
+    await page.goto(`${base}/r/${review_id}`);
+    const top = page.locator(".latest-receipt");
+    const read = await clock(page, hoop.store.receipts(review_id)["1.0"]!.at);
+    assert.equal(await top.innerText(), `Latest review: Read by Claude ${read} · No response yet`);
+    hoop.reply(hoop.store.feedback(review_id, 1)[0]!.comments[0]!.thread!, "Yes, inclusive.");
+    await page.reload();
+    const answered = await clock(page, hoop.store.replies(review_id)[0]!.at);
+    assert.equal(await top.innerText(), `Latest review: Answered by Claude ${answered}`);
+    // The owner's session reads it too, as it must before it revises.
+    hoop.receive(review_id);
+    hoop.submit({ ...example(), title: "Order export: v2", review_id }, 1);
+    await page.reload();
+    const revised = await clock(page, hoop.store.revisionAt(review_id, 2)!);
+    assert.equal(await page.locator(".trail-list .receipt").first().textContent(), `Revised by Claude ${revised}`);
+
+    // An approval asks Claude to act on nothing: its receipt says only when Claude read it.
+    const ok = hoop.submit(parseMarkdown("# Ship it\n\nShip on Friday.\n")).review_id;
+    hoop.review(ok, { verdict: "approved", reviewer: "ana", comments: [] });
+    new Hoop(hoop.store, null).receive(ok);
+    await page.goto(`${base}/r/${ok}`);
+    assert.equal(await top.innerText(), `Latest review: Read by Claude ${await clock(page, hoop.store.receipts(ok)["1.0"]!.at)}`);
   }),
 );
 

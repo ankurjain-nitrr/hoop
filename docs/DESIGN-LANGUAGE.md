@@ -201,7 +201,10 @@ questions unanswered", "2 answers, nothing open").
 
 **Receipts.** How far something sent got reads as a short status with its time, never a sentence:
 "Sent to Claude 14:01", then "Read by Claude 14:02" (or "Read by" the session's name), "Answered by
-Claude 14:03". Not "Claude read this at 14:02".
+Claude 14:03". Not "Claude read this at 14:02". On a review's page, a review that asks Claude to act
+reads "Read by Claude 14:02 · No response yet" until Claude responds, then what it did: "Revised by
+Claude 14:10" for a revision of its own (not a reviewer's Apply), else "Answered by Claude 14:06" for
+a reply. A review that asks Claude to act on nothing, such as an approval, says only "Read by".
 
 **hoop's terms.** Words hoop uses for its own parts, the same on every page:
 

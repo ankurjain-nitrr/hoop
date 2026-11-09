@@ -262,6 +262,22 @@ const TOLD = {
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
 };
 
+/** What Claude did after reading a review, as its receipt says it. */
+const RESPONDED = { revised: "Revised", replied: "Answered" };
+
+/**
+ * A read review's receipt: what Claude did after reading it ("Revised by Claude 21:10", "Answered by
+ * Claude 21:06"), else when it read it, with "No response yet" while the review asks it to act. Only a
+ * review's own page knows its responses; a quick question's card says only when Claude read it.
+ */
+function readText(r, key, of) {
+  const who = r.by === "agent" ? "Claude" : r.by;
+  const done = of.responses?.[key];
+  if (done && RESPONDED[done.kind]) return `${RESPONDED[done.kind]} by ${who} ${readAt(done.at)}`;
+  const waits = of.responses && of.asks_to_act?.[key] !== false;
+  return `Read by ${who} ${readAt(r.at)}${waits ? " · No response yet" : ""}`;
+}
+
 /**
  * Whether and when Claude read a submitted review, as a short status: "Read by Claude 21:04", "Sent
  * to Claude 21:03", or "Not read yet" with why it didn't reach the session; for a review that asks
@@ -270,7 +286,7 @@ const TOLD = {
  */
 export function receiptText(key, of = state.view) {
   const r = of?.receipts?.[key];
-  if (r) return `Read by ${r.by === "agent" ? "Claude" : r.by} ${readAt(r.at)}`;
+  if (r) return readText(r, key, of);
   const d = of?.deliveries?.[key];
   if (of?.asks_to_act?.[key] === false) return d && TOLD[d.outcome] ? TOLD[d.outcome](d) : "Nothing for Claude to act on";
   return d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : "Not read yet";

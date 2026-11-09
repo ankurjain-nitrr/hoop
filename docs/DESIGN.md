@@ -676,7 +676,10 @@ requests and action items go the same way (`sendLive`), and so do the Work page'
 (`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
 The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
-`waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
+`waiting` as "Sent to Claude <time>". Once read, the view's `responses` (by receipt key) say what
+Claude did after the review: its first revision after it that no reviewer's Apply made ("Revised by
+Claude <time>"), else its first reply after it ("Answered by Claude <time>"); without one, a review
+that asks Claude to act reads "Read by Claude <time> · No response yet". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
 agent's own replies and comments are never sent. The review page's header says what the owner's
 session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
