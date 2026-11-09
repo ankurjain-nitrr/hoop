@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { addChanges } from "../src/steer.js";
 import { Store } from "../src/store.js";
-import { editWork, moveInQueue, workHook } from "../src/work.js";
+import { editWork, workHook } from "../src/work.js";
+import { moveInQueue } from "../src/work-queue.js";
 import { example, freePort, hoopArgs, pagesFor, TEST_SESSION } from "./helpers.js";
 
 // Replays the recorded hook inputs in test/fixtures/hook-inputs/ through the plugin's hooks, as
@@ -366,10 +367,10 @@ const NETWORK_FILES: Record<string, string> = {
   "pages.ts": "asks 127.0.0.1 whether a pages process answers (http), and whether the port is taken on ::1 (net)",
   "remote.ts": "sends writes to the pages process on 127.0.0.1 (http)",
   "web.ts": "is the pages process: serves the pages on loopback (http)",
-  "steer.ts": "writes a person's Work change into their own Claude Code session's messaging socket (net)",
+  "deliver.ts": "writes a person's review, Work change or action item result into their own Claude Code session's messaging socket (net)",
 };
-/** The only src/ file that may run `claude`: `hoop init` installs the plugin with it. */
-const CLAUDE_FILES = ["init.ts"];
+/** The only src/ files that may run `claude`: `hoop init` installs the plugin with it, and `hoop update` updates it. */
+const CLAUDE_FILES = ["init.ts", "update.ts"];
 
 test("no hook's code calls a model: hoop's source has no model SDK, runs claude only to install, and touches the network only where listed", () => {
   // Most of a hook's work runs in the pages process, whose PATH may hold a real claude; the fake

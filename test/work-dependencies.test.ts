@@ -5,9 +5,12 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
-import { addChanges, changeLine, Steer, workGate } from "../src/steer.js";
+import { addChanges, changeLine, Steer } from "../src/steer.js";
+import { workGate } from "../src/tool-gate.js";
 import { Store } from "../src/store.js";
-import { firstQueued, readWork, workHook, workQueue, workView } from "../src/work.js";
+import { readWork, workHook } from "../src/work.js";
+import { workQueue, workView } from "../src/work-view.js";
+import { firstQueued } from "../src/work-queue.js";
 import { upNext } from "../web/activity.js";
 import { BROWSER_SKIP, hasFocus, hoopArgs, pagesFor, tempHome, withBrowser } from "./helpers.js";
 import { atSecond as at } from "./builders.js";

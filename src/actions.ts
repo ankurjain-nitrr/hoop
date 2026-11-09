@@ -256,7 +256,7 @@ export class Actions {
 /** Runs `npm` with an argument array and resolves its standard output; rejects when it fails or is missing. */
 export type NpmRunner = (args: string[]) => Promise<string>;
 
-const runNpm: NpmRunner = (args) =>
+export const runNpm: NpmRunner = (args) =>
   new Promise((resolve, reject) =>
     execFile("npm", args, { timeout: 30_000, maxBuffer: 1024 * 1024, env: { ...process.env, npm_config_update_notifier: "false" } }, (err, out) =>
       err ? reject(err) : resolve(out),

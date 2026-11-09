@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { claudeSettings } from "../src/init.js";
 import { Hoop } from "../src/hoop.js";
 import { Store } from "../src/store.js";
-import { workHook, workView } from "../src/work.js";
+import { workHook } from "../src/work.js";
+import { workView } from "../src/work-view.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 import { jsonLine as line } from "./builders.js";
 

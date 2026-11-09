@@ -38,6 +38,8 @@ jobs:
             echo "::error::Tag $TAG doesn't match package.json version $version"
             exit 1
           fi
+      - name: Check the plugin carries the same version
+        run: npm run check:version
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

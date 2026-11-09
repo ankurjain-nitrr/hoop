@@ -5,6 +5,7 @@ const svg = (body) =>
 
 export const icons = {
   comment: svg('<path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/>'),
+  info: svg('<circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.75M8 5h.01"/>'),
   plus: svg('<path d="M8 3.5v9M3.5 8h9"/>'),
   expand: svg('<path d="M6 4l4 4-4 4"/>'),
   collapse: svg('<path d="M4 6l4 4 4-4"/>'),

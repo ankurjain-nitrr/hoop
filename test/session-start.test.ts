@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { NOTE_MAX, readSnapshot, SNAPSHOT_FRESH_MS, saveSnapshot, sessionNote, sessionStartOutput } from "../src/session-start.js";
 import { Store } from "../src/store.js";
-import { editWork, moveInQueue, workHook } from "../src/work.js";
+import { editWork, workHook } from "../src/work.js";
+import { moveInQueue } from "../src/work-queue.js";
 import { example, hoopArgs, pagesFor, TEST_SESSION, tempHome, hoopCli } from "./helpers.js";
 import { jsonLine, writeTranscript } from "./builders.js";
 

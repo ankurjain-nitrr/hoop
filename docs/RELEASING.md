@@ -26,11 +26,30 @@ The README and the docs describe `main`. Between releases, `CHANGELOG.md`'s Unre
 what `main` has that the published package doesn't, so the README marks nothing as unreleased;
 the cadence keeps that gap to two weeks.
 
+## One version number
+
+The package and the Claude Code plugin share one version number, and move together. `package.json`
+holds it; `package-lock.json` and `plugins/hoop/.claude-plugin/plugin.json` carry the same number,
+and the plugin runs the package of its own version through npx (`plugins/hoop/scripts/hoop.sh`).
+The pages' version label reads it from the installed `package.json`.
+`npm version X.Y.Z --no-git-tag-version` sets all three, through the `version` script
+(`scripts/version.ts`). `npm run check:version` fails, naming each file, when they differ, and so
+does `test/plugin.test.ts`, which CI runs, and the Release workflow.
+
+The number moves only in a release's pull request. Claude Code keeps an installed plugin by its
+version, so a change to the plugin's files reaches installed sessions at the next release, with the
+package it was made for. The numbers began at 1.6.0, after the plugin's 1.5.10 and the package's
+0.2.0: higher than both, so Claude Code sees a new plugin and npm a new package.
+
 ## Make a release
 
-1. In a pull request, bump `version` in `package.json` and `package-lock.json`
-   (`npm version X.Y.Z --no-git-tag-version`), turn `CHANGELOG.md`'s Unreleased section into
+1. In a pull request, set the version with `npm version X.Y.Z --no-git-tag-version`, which sets
+   `package.json`, `package-lock.json` and the plugin's `plugin.json` (see
+   [One version number](#one-version-number)), turn `CHANGELOG.md`'s Unreleased section into
    `## [X.Y.Z] - <date>` (the GitHub Release takes its notes from it), and merge it to `main`.
+   From that merge until the release is approved (step 5), the plugin on `main` names a package
+   npm doesn't have yet, so a session without a global `hoop` that installs or updates the plugin
+   then can't start hoop. Merge it only when you'll tag and approve right after.
 2. On that commit, run the release check of the agent evals with `npm run eval -- --release` (see
    [Agent evals](#agent-evals)). Don't release unless it exits 0. A release needs a committed
    `evals/baseline.json`, and the check refuses to start without one, or with one that has
@@ -49,14 +68,15 @@ the cadence keeps that gap to two weeks.
    ```
 
 4. The Release workflow runs the type check, lint, the full test suite with Chrome and
-   `scripts/e2e-local.ts`, checks that the tag is `v` plus the `package.json` version, and runs
+   `scripts/e2e-local.ts`, checks that the tag is `v` plus the `package.json` version and that the
+   plugin carries the same version, and runs
    `npm stage publish`, then creates the tag's GitHub Release with that version's `CHANGELOG.md`
    section as its notes and the package tarball attached. npm authenticates the workflow through trusted publishing, so no token is
    stored anywhere.
 5. On npmjs.com, open **Staged Packages**, check the staged version, and **Approve** it with
    two-factor authentication. Only then is it published.
-6. To move the plugin to the new version, change `HOOP_PACKAGE` in
-   `plugins/hoop/scripts/hoop.sh` and bump the plugin's version, in a pull request.
+6. Nothing else: the plugin moved with the package in step 1, and runs the package of its own
+   version once it is approved.
 
 ## Agent evals
 
