@@ -86,10 +86,11 @@ template. `README.md` describes the product and `docs/DESIGN.md` how it works.
   `writeAtomic()`, `slugify()`, `obj()`, `oneLine()`, `quote()`, `count()`, `sha256()`, `opt()`,
   `pagesPort()` and `claudeDir()`. The markdown block grammar (`TABLE_DELIM` and the
   other patterns) lives in `web/blocks.js`, shared by the parser and the page. The rules about
-  whether a review can change and the thread lookup live in `src/rules.ts`. One module each owns:
+  whether a review can change live in `src/rules.ts`, and the thread lookup in `src/threads.ts`. One module each owns:
   processes and boot time (`src/proc.ts`), reading transcripts (`src/transcript.ts`), hook input
   (`src/hook-input.ts`), page links (`src/links.ts`, with `web/links.js` for the pages), what a
   session was already told (`src/told.ts`), delivering a message into a session (`src/deliver.ts`),
-  Claude Code's running sessions (`src/claude-sessions.ts`), Work events (`src/work-events.ts`) and
-  the Work queue (`src/work-queue.ts`). Use them; don't re-derive environment defaults, block
+  Claude Code's running sessions (`src/claude-sessions.ts`), Work events (`src/work-events.ts`), the
+  Work queue (`src/work-queue.ts`), settling the person's Work changes (`src/work-settle.ts`), the
+  Work view (`src/work-view.ts`) and the gate before each tool call (`src/tool-gate.ts`). Use them; don't re-derive environment defaults, block
   parsing or what those modules own.

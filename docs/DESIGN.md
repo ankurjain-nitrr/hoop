@@ -89,11 +89,11 @@ be cut short and run again; until it runs, sessions and commands read the review
 Thread IDs (`th_<review>_<n>`) and edit IDs (`ed_<review>_<n>`) embed the review ID. An approved
 review's text is frozen (no Apply, no decisions on proposed edits, `editable`), and a submit against
 it creates a new review that supersedes it, until a person reopens it (see Verdicts). `src/rules.ts` holds
-the rules on whether a review can change, and the thread lookup.
+the rules on whether a review can change, and `src/threads.ts` the thread lookup.
 
 ### Thread status
 
-`threadViews` in `src/rules.ts` gives Claude every thread on a review, from every revision, as the
+`threadViews` in `src/threads.ts` gives Claude every thread on a review, from every revision, as the
 review page shows it. A thread is `resolved` once a reviewer resolved it and nothing was added since
 (the page's rule). Otherwise it is `answered` when the owner session replied or proposed an edit
 after the thread's latest entry from anyone else (a reviewer's comment, another session's

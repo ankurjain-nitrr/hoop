@@ -2,7 +2,7 @@
 // script. It reads hoop's files read-only and writes only through the pages API the browser uses,
 // at fixed points, so it is deterministic and a failed check is the agent's, not the reviewer's.
 import { DOC, itemLines, type ReviewDoc } from "../../src/contract.js";
-import { threadViews } from "../../src/rules.js";
+import { threadViews } from "../../src/threads.js";
 import { Store } from "../../src/store.js";
 import { isWaiting } from "../../src/wait.js";
 import { answerMessage, wakeMessage } from "../../src/wake.js";

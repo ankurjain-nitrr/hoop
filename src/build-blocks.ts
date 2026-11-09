@@ -1,5 +1,5 @@
 // The blocks of a build's markdown: their kinds, and the split of a markdown file into them.
-import { ATX, FENCE, headingLevel, ITEM, subtitleWords, TABLE_DELIM } from "../web/blocks.js";
+import { ATX, FENCE, headingLevel, ITEM, MERMAID, subtitleWords, TABLE_DELIM } from "../web/blocks.js";
 
 /** The blocks a build is made of: the blocks a markdown file has. A subtitle is one line of emphasis, which under the title is the document's subtitle. */
 export const BLOCK_KINDS = ["h1", "subtitle", "h2", "h3", "paragraph", "list", "table", "code", "diagram"] as const;
@@ -7,7 +7,6 @@ export type BlockKind = (typeof BLOCK_KINDS)[number];
 
 /** A heading's kind by its level: below `##`, every heading is a subsection. */
 const HEADINGS = ["h1", "h2"] as const;
-const MERMAID = /^\s{0,3}(```|~~~)\s*mermaid\s*$/;
 
 /** Whether block `i` sits right under a title that starts the document, where a subtitle goes. */
 export const underTitle = (blocks: { kind: BlockKind }[], i: number) => i === 1 && blocks[0]!.kind === "h1";

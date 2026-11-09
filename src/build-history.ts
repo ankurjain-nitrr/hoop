@@ -6,7 +6,7 @@
 // because a change around it replaced it, and is there again when it comes back; only the person
 // removing the heading, or making it no longer a section's, forgets it. These functions change a
 // build in place; `Builds` saves each as a step.
-import { parentOf, sectionRange } from "../web/blocks.js";
+import { HEADING_MARK, parentOf, sectionRange } from "../web/blocks.js";
 import type { Build, BuildBlock, BuildChange } from "./build.js";
 import { levelOf } from "./build-blocks.js";
 import { overtake, prune } from "./revise.js";
@@ -219,7 +219,7 @@ const restoredFrom = (v: SectionVersion | undefined): SectionHistory["current"] 
   v?.by && v.how && v.at ? { by: v.by, how: v.how, at: v.at, restored: now() } : undefined;
 
 /** A heading's text without its `#`s. */
-const words = (text: string) => text.replace(/^\s{0,3}#{1,6}\s*/, "").trim();
+const words = (text: string) => text.replace(HEADING_MARK, "").trim();
 
 /**
  * Refuses replacing the text under the heading at `i` while Claude's draft waits on a subheading
