@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ID_PREFIXES } from "../src/ids.js";
 import { ALLOWED, findBanned, RULES, sources, unallowed } from "../scripts/banned.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -31,6 +34,22 @@ test("each banned pattern is found outside its owner, and only there", () => {
     "review ID regex src/hoop.ts:3",
     "server importing a page module src/web.ts:2",
   ]);
+});
+
+test("the hand-built ID rule knows every prefix hoop makes IDs with", () => {
+  const made = new Set<string>();
+  for (const f of sources(root)) for (const m of f.text.matchAll(/\b(?:newId|idPattern|childPattern|childId)\(\s*"([a-z]+)"/g)) made.add(m[1]!);
+  for (const kind of readFileSync(join(root, "src/ids.ts"), "utf8")
+    .match(/type ChildKind = ([^;]+);/)![1]!
+    .matchAll(/"([a-z]+)"/g))
+    made.add(kind[1]!);
+  assert.ok(made.size >= 8, [...made].join(", "));
+  for (const p of made) assert.ok((ID_PREFIXES as readonly string[]).includes(p), `${p}_ IDs: add "${p}" to ID_PREFIXES in src/ids.ts`);
+  const rule = rules("hand-built ID");
+  for (const p of ID_PREFIXES) {
+    assert.equal(findBanned([{ path: "src/x.ts", text: `const id = \`${p}_\${n}\`;` }], rule).length, 1, p);
+    assert.equal(findBanned([{ path: "src/x.ts", text: `const id = "${p}_" + n;` }], rule).length, 1, p);
+  }
 });
 
 test("an allowed use counts up to its number, and one more in the same file is a finding", () => {

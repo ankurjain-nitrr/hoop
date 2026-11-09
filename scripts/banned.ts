@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ID_PREFIXES } from "../src/ids.js";
 
 export type Rule = {
   name: string;
@@ -30,7 +31,7 @@ export const RULES: Rule[] = [
   {
     name: "hand-built ID",
     use: "newId or childId (src/ids.ts)",
-    pattern: /`(?:rv|th|ed|bt|st|ac)_\$\{|["'](?:rv|th|ed|bt|st|ac)_["']\s*\+/,
+    pattern: new RegExp(`\`(?:${ID_PREFIXES.join("|")})_\\$\\{|["'](?:${ID_PREFIXES.join("|")})_["']\\s*\\+`),
     dirs: ["src", "web"],
     owners: ["src/ids.ts"],
   },

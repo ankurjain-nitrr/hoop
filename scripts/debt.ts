@@ -1,10 +1,11 @@
 // The debt check: counts runtime import cycles (dependency-cruiser), unused code (knip), complex
-// code (Biome's complexity rules), loose typing in src (type-coverage), duplicated code (jscpd) and
-// comments that hide code from those tools, and patterns used outside their owner (scripts/banned.ts), here and at a base commit, and exits 1 when a count is
-// higher here. The base is measured in a temporary worktree, so there is no baseline file to keep
-// up to date, and debt paid off anywhere lowers the bar for everyone. `--base` defaults to where
-// this branch left origin/main; CI passes HEAD^1, the base branch for a pull request's merge commit
-// and the previous commit on main.
+// code (Biome's complexity rules), loose typing in src (type-coverage), duplicated code (jscpd),
+// comments that hide code from those tools, and patterns used outside their owner
+// (scripts/banned.ts), here and at a base commit, and exits 1 when a count is higher here. The
+// base is measured in a temporary worktree, so there is no baseline file to keep up to date, and
+// debt paid off anywhere lowers the bar for everyone. `--base` defaults to where this branch left
+// origin/main; CI passes HEAD^1, the base branch for a pull request's merge commit and the
+// previous commit on main.
 // Usage: tsx scripts/debt.ts [--base <ref>]
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
