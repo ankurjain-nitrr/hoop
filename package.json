@@ -21,8 +21,8 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"for (const f of ['dist/bin.js', 'dist/cli.js']) require('node:fs').chmodSync(f, 0o755)\"",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json",
+    "build": "node scripts/web-types.mjs && tsc -p tsconfig.build.json && node -e \"for (const f of ['dist/bin.js', 'dist/cli.js']) require('node:fs').chmodSync(f, 0o755)\"",
+    "typecheck": "node scripts/web-types.mjs && tsc --noEmit && tsc -p tsconfig.web.json",
     "test": "tsx --test test/*.test.ts",
     "prepare": "npm run build && node scripts/setup-hooks.mjs",
     "prepublishOnly": "npm run build",

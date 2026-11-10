@@ -1,4 +1,6 @@
 node_modules/
 dist/
+# Written from a web module's JSDoc (tsconfig.web-types.json); the stubs not yet replaced stay tracked.
+web/*.d.ts
 evals/runs/
 *.tgz
