@@ -4,7 +4,6 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// @ts-expect-error: a plain script, without types.
 import { checkEnv, testsFor } from "../scripts/pre-push.mjs";
 
 const root = new URL("..", import.meta.url).pathname;

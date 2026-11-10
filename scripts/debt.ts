@@ -8,7 +8,7 @@
 // and the previous commit on main.
 // Usage: tsx scripts/debt.ts [--base <ref>]
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,6 +113,11 @@ function suppressions(at: string): Counts {
 /** The counts for the checkout at `dir`, by default this one as it is now. */
 export function measure(dir = root): Counts {
   const only = Object.values(BIOME_RULES).map((r) => `--only=${r}`);
+  // The checked web modules' declarations, which src's types read, are generated: write them first.
+  if (existsSync(join(dir, "scripts/web-types.mjs"))) {
+    const types = spawnSync(process.execPath, [join(dir, "scripts/web-types.mjs")], { cwd: dir, encoding: "utf8", timeout: TOOL_TIMEOUT_MS });
+    if (types.status !== 0) throw new Error(`scripts/web-types.mjs failed: ${(types.stdout + types.stderr).trim().slice(0, 500)}`);
+  }
   const counts = {
     ...cruiseCounts(json(["depcruise", ...SOURCES, "--output-type", "json"], dir)),
     ...knipCounts(json(["knip", "--no-progress", "--reporter", "json"], dir)),
