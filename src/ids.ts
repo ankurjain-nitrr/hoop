@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
 
+/**
+ * Every prefix hoop's IDs use: reviews, threads, edits, build threads, steer messages, action items,
+ * Work changes and permission prompts. A new kind of ID adds its prefix here.
+ */
+export const ID_PREFIXES = ["rv", "th", "ed", "bt", "st", "ac", "ch", "pm"] as const;
+
 /** The pattern, without anchors, of an ID that `newId(prefix)` makes: `prefix`, `_`, lowercase letters and digits. */
 export const idPattern = (prefix: string) => `${prefix}_[a-z0-9]+`;
 

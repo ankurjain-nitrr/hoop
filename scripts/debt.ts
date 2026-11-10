@@ -1,7 +1,7 @@
 // The debt check: counts runtime import cycles (dependency-cruiser), unused code (knip), complex
 // code (Biome's complexity rules), loose typing in src (type-coverage), duplicated code (jscpd;
-// test/ apart, from fewer tokens) and comments that hide code from those tools, here and at a
-// base commit, and exits 1 when a count is
+// test/ apart, from fewer tokens), comments that hide code from those tools, and patterns used
+// outside their owner (scripts/banned.ts), here and at a base commit, and exits 1 when a count is
 // higher here. The base is measured in a temporary worktree, so there is no baseline file to keep
 // up to date, and debt paid off anywhere lowers the bar for everyone. `--base` defaults to where
 // this branch left origin/main; CI passes HEAD^1, the base branch for a pull request's merge commit
@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { bannedCounts } from "./banned.js";
 
 export type Counts = Record<string, number>;
 
@@ -119,6 +120,8 @@ export function measure(dir = root): Counts {
     // src only (tsconfig.build.json). hoop allows non-null assertions, so they don't count.
     ...typeCounts(json(["type-coverage", "-p", "tsconfig.build.json", "--strict", "--ignore-non-null-assertion", "--json-output"], dir)),
     ...suppressions(dir),
+    // Patterns used outside the module that owns them (scripts/banned.ts).
+    ...bannedCounts(dir),
   };
   return {
     ...counts,
@@ -222,7 +225,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const line of better) console.log(`Less debt than ${ref.slice(0, 7)}: ${line}`);
   if (worse.length)
     console.error(
-      "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd; grep for suppressions) to see what to fix.",
+      "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail, jscpd or tsx scripts/banned.ts; grep for suppressions) to see what to fix.",
     );
   else console.log(`No new debt: ${JSON.stringify(now)}`);
   process.exit(worse.length ? 1 : 0);
