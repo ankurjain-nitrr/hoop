@@ -59,6 +59,7 @@ const STATIC: Record<string, [string, string]> = {
   "/build-drafts.js": ["build-drafts.js", "text/javascript; charset=utf-8"],
   "/build-history.js": ["build-history.js", "text/javascript; charset=utf-8"],
   "/fold.js": ["fold.js", "text/javascript; charset=utf-8"],
+  "/permissions.js": ["permissions.js", "text/javascript; charset=utf-8"],
   "/pending.js": ["pending.js", "text/javascript; charset=utf-8"],
   "/ask.js": ["ask.js", "text/javascript; charset=utf-8"],
   "/drafts.js": ["drafts.js", "text/javascript; charset=utf-8"],
@@ -809,7 +810,14 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
     [
       "GET",
       /^\/api\/permissions$/,
-      async (_q, res) => send(res, 200, await queue.run(PERMISSIONS_KEY, () => (prunePermissions(hoop.store.home), listPermissions(hoop.store.home)))),
+      async (_q, res) => {
+        const list = await queue.run(PERMISSIONS_KEY, () => (prunePermissions(hoop.store.home), listPermissions(hoop.store.home)));
+        send(
+          res,
+          200,
+          list.map((p) => ({ ...p, session_label: hoop.ownerLabel({ session: p.session }) })),
+        );
+      },
     ],
     // The person's Allow once or Deny (with an optional reason Claude reads). The first answer wins.
     [

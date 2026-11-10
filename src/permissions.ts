@@ -86,10 +86,13 @@ export function readPermission(home: string, id: string): Permission | undefined
 /** Every prompt's record, newest first. */
 export function listPermissions(home: string): Permission[] {
   if (!existsSync(dir(home))) return [];
-  return readdirSync(dir(home))
-    .filter((f) => f.endsWith(".json"))
-    .flatMap((f) => readPermission(home, f.slice(0, -5)) ?? [])
-    .sort((a, b) => b.at.localeCompare(a.at));
+  return (
+    readdirSync(dir(home))
+      .filter((f) => f.endsWith(".json"))
+      .flatMap((f) => readPermission(home, f.slice(0, -5)) ?? [])
+      // Newest first; prompts asked in the same millisecond keep one order, by ID.
+      .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id))
+  );
 }
 
 /**
