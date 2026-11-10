@@ -1,6 +1,5 @@
 node_modules/
 dist/
-# Written from a web module's JSDoc (tsconfig.web-types.json); the stubs not yet replaced stay tracked.
 # Generated from JSDoc by scripts/web-types.mjs; the other web/*.d.ts stubs stay tracked and linted.
 web/links.d.ts
 web/doc-lines.d.ts
@@ -8,5 +7,11 @@ web/place.d.ts
 web/status.d.ts
 web/esc.d.ts
 web/icons.d.ts
+web/diagram-frame.d.ts
+web/focus.d.ts
+web/send.d.ts
+web/build-drafts.d.ts
+web/api.d.ts
+web/tips.d.ts
 evals/runs/
 *.tgz
