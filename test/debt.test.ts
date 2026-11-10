@@ -38,6 +38,7 @@ test("the other tools' output is read into counts", () => {
   assert.deepEqual(lintCounts(lint), { complexFunctions: 1, nestedTernaries: 1 });
   assert.deepEqual(typeCounts({ totalCount: 10, correctCount: 7 }), { looselyTyped: 3 });
   assert.deepEqual(jscpdCounts({ statistics: { total: { duplicatedLines: 21 } } }), { duplicatedLines: 21 });
+  assert.deepEqual(jscpdCounts({ statistics: { total: { duplicatedLines: 8 } } }, "duplicatedTestLines"), { duplicatedTestLines: 8 }, "test/ counts apart");
 });
 
 test("a comment that hides code from the counting tools counts as debt itself", () => {

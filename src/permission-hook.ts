@@ -1,5 +1,5 @@
 import { hookFields } from "./hook-input.js";
-import { decisionOutput, hasResult, isOn, openCall, PERMISSION_PROMPTS, readPermission } from "./permissions.js";
+import { decisionOutput, hasResult, isOn, NOT_ANSWERED, openCall, PERMISSION_PROMPTS, readPermission } from "./permissions.js";
 import { isRecord } from "./util.js";
 
 // `hoop permission-hook`, Claude Code's PermissionRequest hook while permission prompts are on: it
@@ -47,7 +47,7 @@ function terminalWatch(transcript: string | undefined, tool: string, input: Reco
 export async function permissionHook(input: unknown, o: HookOptions): Promise<Record<string, unknown> | undefined> {
   if (!isOn(o.home, PERMISSION_PROMPTS)) return undefined;
   const f = hookFields(input);
-  if (f.event !== "PermissionRequest" || !f.session || !f.tool) return undefined;
+  if (f.event !== "PermissionRequest" || !f.session || !f.tool || NOT_ANSWERED.has(f.tool)) return undefined;
   const id = await ask(o.remote, input);
   if (!id) return undefined;
   const settle = async (how: "terminal" | "handed") => {

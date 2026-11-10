@@ -41,39 +41,67 @@ const waiting = new Map();
  */
 const heights = new Map();
 
-/** Draws each diagram placeholder on the page in its own sandboxed frame. */
+/** The words a diagram shows over its source while diagrams are off in hoop's off list. */
+export const DIAGRAMS_OFF = "Diagrams are off in hoop's off list, so this shows its source.";
+
+let off;
+/**
+ * Whether diagrams are off in hoop's off list (the pages' `diagrams_off`), asked once a page: while
+ * the answer is out, nothing loads the library. A failed ask leaves them on.
+ */
+const diagramsOff = () =>
+  (off ??= fetch("/api/info")
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((info) => Boolean(info?.diagrams_off))
+    .catch(() => false));
+
+/**
+ * Draws each diagram placeholder on the page in its own sandboxed frame, or, while diagrams are off,
+ * shows its source under a muted note; that is no error, so nothing tells Claude of it.
+ */
 export function mountDiagrams(root = document) {
-  for (const box of root.querySelectorAll(".diagram[data-diagram-source]:not([data-mounted])")) {
-    box.dataset.mounted = "1";
-    const tall = heights.get(box.dataset.diagramSource);
-    if (tall) box.style.minHeight = `${tall}px`;
-    const id = `d${++seq}`;
-    const frame = document.createElement("iframe");
-    frame.setAttribute("sandbox", "allow-scripts");
-    frame.setAttribute("title", "Diagram");
-    // The frame draws at full width but out of sight, since a hidden frame lays nothing out and
-    // the library would measure every label as zero.
-    frame.className = "diagram-frame drawing";
-    // A drawing has nothing to operate, so the frame stays out of the Tab order.
-    frame.tabIndex = -1;
-    const origin = location.origin;
-    const policy = `default-src 'none'; script-src ${MERMAID_URL} ${origin}/diagram-frame.js; style-src 'unsafe-inline'; img-src data:; font-src data:`;
-    frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(policy)}"><style>html,body{margin:0;background:transparent}</style></head><body><script src="${MERMAID_URL}" integrity="${MERMAID_SRI}" crossorigin="anonymous"></script><script src="${origin}/diagram-frame.js"></script></body></html>`;
-    let loads = 0;
-    const fail = (reason) => {
-      waiting.delete(id);
-      frame.remove();
-      box.style.minHeight = "";
-      box.innerHTML = `<p class="diagram-error">This diagram can't be drawn: ${esc(reason)}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
-    };
-    // A frame that loads again has navigated itself, so it goes, and the source shows in its place.
-    frame.addEventListener("load", () => {
-      if (++loads > 1) fail("it tried to leave its frame");
-    });
-    const timer = setTimeout(() => waiting.has(id) && fail("it took too long to draw"), TIMEOUT_MS);
-    waiting.set(id, { frame, box, fail, timer });
-    box.append(frame);
-  }
+  const boxes = [...root.querySelectorAll(".diagram[data-diagram-source]:not([data-mounted])")];
+  if (!boxes.length) return;
+  for (const box of boxes) box.dataset.mounted = "1";
+  diagramsOff().then((isOff) => {
+    for (const box of boxes) {
+      if (!box.isConnected) continue;
+      if (isOff) box.innerHTML = `<p class="diagram-off">${DIAGRAMS_OFF}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
+      else draw(box);
+    }
+  });
+}
+
+/** Draws one diagram placeholder in its own sandboxed frame. */
+function draw(box) {
+  const tall = heights.get(box.dataset.diagramSource);
+  if (tall) box.style.minHeight = `${tall}px`;
+  const id = `d${++seq}`;
+  const frame = document.createElement("iframe");
+  frame.setAttribute("sandbox", "allow-scripts");
+  frame.setAttribute("title", "Diagram");
+  // The frame draws at full width but out of sight, since a hidden frame lays nothing out and
+  // the library would measure every label as zero.
+  frame.className = "diagram-frame drawing";
+  // A drawing has nothing to operate, so the frame stays out of the Tab order.
+  frame.tabIndex = -1;
+  const origin = location.origin;
+  const policy = `default-src 'none'; script-src ${MERMAID_URL} ${origin}/diagram-frame.js; style-src 'unsafe-inline'; img-src data:; font-src data:`;
+  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${esc(policy)}"><style>html,body{margin:0;background:transparent}</style></head><body><script src="${MERMAID_URL}" integrity="${MERMAID_SRI}" crossorigin="anonymous"></script><script src="${origin}/diagram-frame.js"></script></body></html>`;
+  let loads = 0;
+  const fail = (reason) => {
+    waiting.delete(id);
+    frame.remove();
+    box.style.minHeight = "";
+    box.innerHTML = `<p class="diagram-error">This diagram can't be drawn: ${esc(reason)}</p><pre class="diagram-src">${esc(box.dataset.diagramSource)}</pre>`;
+  };
+  // A frame that loads again has navigated itself, so it goes, and the source shows in its place.
+  frame.addEventListener("load", () => {
+    if (++loads > 1) fail("it tried to leave its frame");
+  });
+  const timer = setTimeout(() => waiting.has(id) && fail("it took too long to draw"), TIMEOUT_MS);
+  waiting.set(id, { frame, box, fail, timer });
+  box.append(frame);
 }
 
 window.addEventListener("message", (e) => {
