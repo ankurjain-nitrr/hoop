@@ -23,7 +23,7 @@ const REASON_MAX = 200;
 
 /**
  * What the pages know of the prompts; the Deny box open on one and what is typed in it; each
- * prompt's last refusal; the answer being sent; the answered card held in place, with its height;
+ * prompt's last refusal; the answer being sent; the answered cards held in place, with their heights;
  * until when Allow once waits; and how each page shows the prompts again.
  */
 const perm = {
@@ -32,7 +32,7 @@ const perm = {
   reason: "",
   errors: {},
   busy: null,
-  held: null,
+  holds: {},
   quietUntil: 0,
   pages: [],
   repaint: (local = true) => perm.pages.forEach((f) => f(local)),
@@ -50,10 +50,37 @@ export function onPermissions(repaint) {
 /** The order and states the cards show, to tell when they changed or moved. */
 const layout = (list) => list.map((p) => `${p.id}:${p.state}`).join(",");
 
+/** A prompt's card on the page, if it shows. */
+const cardOf = (id) => document.querySelector(`[data-permission="${CSS.escape(id)}"]`);
+
+/**
+ * Holds a card that is being answered or was answered elsewhere in its place, at the height it has
+ * now, read before any repaint, so the next card never moves up under the pointer; it lets go after
+ * HOLD_MS, or, with `later` false, when the caller says (`letGo`).
+ */
+function hold(id, later = true) {
+  const card = cardOf(id);
+  if (!card || perm.holds[id]) return;
+  perm.holds[id] = card.getBoundingClientRect().height;
+  if (later) letGo(id);
+}
+
+/** Lets a held card go HOLD_MS from now: from when it shows answered, not from the press. */
+function letGo(id) {
+  setTimeout(() => {
+    delete perm.holds[id];
+    perm.quietUntil = Date.now() + QUIET_MS;
+    perm.repaint(false);
+  }, HOLD_MS);
+}
+
 /** Loads the prompts; shows them again when they changed. A load that fails keeps what the page has. */
 export async function loadPermissions() {
   const list = await peek("/api/permissions");
   if (!Array.isArray(list) || JSON.stringify(list) === JSON.stringify(perm.list)) return;
+  // A card answered elsewhere, as in the terminal, keeps its place a moment too.
+  const was = new Map(perm.list.map((p) => [p.id, p.state]));
+  for (const p of list) if (was.get(p.id) === "waiting" && p.state !== "waiting") hold(p.id);
   // Cards that changed or moved: Allow once waits a moment, so a press aimed at one lands on no other.
   if (layout(list) !== layout(perm.list)) perm.quietUntil = Date.now() + QUIET_MS;
   perm.list = list;
@@ -67,9 +94,7 @@ export const permissionFormOpen = () => perm.denying !== null;
 /** The prompts to show, oldest first, so a new one joins below: each waiting one, and those answered in the last ten minutes. `session` keeps one session's. */
 export function prompts(session, now = Date.now()) {
   return perm.list
-    .filter(
-      (p) => (!session || p.session === session) && (p.state === "waiting" || p.id === perm.held?.id || now - Date.parse(p.settled_at ?? p.at) < SHOWN_MS),
-    )
+    .filter((p) => (!session || p.session === session) && (p.state === "waiting" || p.id in perm.holds || now - Date.parse(p.settled_at ?? p.at) < SHOWN_MS))
     .sort((a, b) => a.at.localeCompare(b.at));
 }
 
@@ -142,15 +167,20 @@ function callHtml(p) {
   const own = OWN[p.tool] ?? [];
   if (p.tool === "Bash" && typeof i.command === "string")
     return `${i.description ? `<p class="d">${shown(i.description)}</p>` : ""}<pre class="perm-call"><code>${shown(i.command)}</code></pre>${fieldsHtml(i, own)}`;
-  if ((p.tool === "Edit" || p.tool === "MultiEdit") && typeof i.file_path === "string") {
-    const edits = Array.isArray(i.edits) ? i.edits : [{ old_string: i.old_string, new_string: i.new_string }];
-    const diff = edits.flatMap((e) => [...marked(e.old_string, "perm-del", "-"), ...marked(e.new_string, "perm-add", "+")]).join("\n");
-    return `<p class="d mono">${shown(i.file_path)}</p><pre class="perm-call"><code>${diff}</code></pre>${fieldsHtml(i, own)}`;
-  }
+  if (p.tool === "Edit" && typeof i.file_path === "string") return `<p class="d mono">${shown(i.file_path)}</p>${editHtml(i)}${fieldsHtml(i, own)}`;
+  if (p.tool === "MultiEdit" && typeof i.file_path === "string" && Array.isArray(i.edits))
+    // Each edit's diff, then its own fields, such as its replace_all.
+    return `<p class="d mono">${shown(i.file_path)}</p>${i.edits.map((e) => editHtml(e) + fieldsHtml(e ?? {}, EDIT_TEXT)).join("")}${fieldsHtml(i, own)}`;
   if (p.tool === "Write" && typeof i.file_path === "string")
     return `<p class="d mono">${shown(i.file_path)}</p><pre class="perm-call"><code>${shown(i.content ?? "")}</code></pre>${fieldsHtml(i, own)}`;
   return `<pre class="perm-call"><code>${shown(JSON.stringify(i, null, 2))}</code></pre>`;
 }
+
+/** An edit's own text fields, which its diff shows. */
+const EDIT_TEXT = ["old_string", "new_string"];
+/** One edit's change, as removed and added lines. */
+const editHtml = (e) =>
+  `<pre class="perm-call"><code>${[...marked(e?.old_string, "perm-del", "-"), ...marked(e?.new_string, "perm-add", "+")].join("\n")}</code></pre>`;
 
 /** A prompt's short name for its buttons: its tool and the start of what it runs or changes. */
 function shortName(p) {
@@ -186,44 +216,48 @@ export function promptHtml(p, h, from = "") {
   const tool = `<span class="tag-tool">${esc(p.tool)}</span>`;
   const note = `<p class="note perm-answered" tabindex="-1" data-permission-note="${id}">${tool} ${esc(ANSWERED[p.state]?.(p) ?? "")}</p>`;
   if (p.state !== "waiting") {
-    const held = perm.held?.id === p.id ? ` style="min-height:${Math.round(perm.held.height)}px"` : "";
+    const held = p.id in perm.holds ? ` style="min-height:${perm.holds[p.id]}px"` : "";
     const line = note.replace("<p ", `<p data-permission="${id}" `);
     return held ? `<div class="perm-held"${held}>${line}</div>` : line;
   }
-  return `<article class="action permission" id="${elementId(p)}" data-permission="${id}" aria-labelledby="${id}-t"><div class="action-head"><h${h} id="${id}-t" class="t">Waiting on you: permission</h${h}>${tool}</div>${from ? `<p class="m">from ${esc(from)}</p>` : ""}${callHtml(p)}${controlsHtml(p)}</article>`;
+  return `<article class="action permission" id="${elementId(p)}" tabindex="-1" data-permission="${id}" aria-labelledby="${id}-t"><div class="action-head"><h${h} id="${id}-t" class="t">Waiting on you: permission</h${h}>${tool}</div>${from ? `<p class="m">from ${esc(from)}</p>` : ""}${callHtml(p)}${controlsHtml(p)}</article>`;
 }
 
 /** Puts the focus on a prompt's note once it is answered, never on a button that approves. */
 const focusNote = (id) => document.querySelector(`[data-permission-note="${CSS.escape(id)}"]`)?.focus();
 
+/** Puts the focus on a prompt's card while its answer is sent: not on another card's buttons. */
+const focusCard = (id) => cardOf(id)?.focus({ preventScroll: true });
+
 /** Sends an answer; a refusal (as when the terminal answered first) shows under the buttons, and the list loads again. */
 async function answer(id, body) {
-  const card = document.querySelector(`[data-permission="${CSS.escape(id)}"]`);
+  // Measured before any repaint replaces the card; it lets go once the answer shows.
+  hold(id, false);
   perm.busy = id;
   perm.errors[id] = "";
   perm.quietUntil = Date.now() + QUIET_MS;
+  focusCard(id);
   perm.repaint();
+  focusCard(id);
+  let ok = false;
   try {
     const p = await post(`/api/permissions/${encodeURIComponent(id)}`, body);
     perm.denying = null;
     perm.reason = "";
     announce(ANSWERED[p.state]?.(p) ?? "");
+    ok = true;
   } catch (err) {
     perm.errors[id] = err.message;
   }
-  // The answered card keeps its place and size a moment, so the next one doesn't move up under the pointer.
-  if (card) perm.held = { id, height: card.getBoundingClientRect().height };
   perm.busy = null;
   perm.quietUntil = Date.now() + QUIET_MS;
   await loadPermissions();
   perm.repaint();
-  focusNote(id);
-  setTimeout(() => {
-    if (perm.held?.id !== id) return;
-    perm.held = null;
-    perm.quietUntil = Date.now() + QUIET_MS;
-    perm.repaint(false);
-  }, HOLD_MS);
+  if (id in perm.holds) letGo(id);
+  // A prompt still waiting (the post failed) takes the focus back on its own Allow once; else its note.
+  const again = document.querySelector(`[data-perm-allow="${CSS.escape(id)}"]`);
+  if (!ok && again) again.focus();
+  else focusNote(id);
 }
 
 document.addEventListener("click", (e) => {

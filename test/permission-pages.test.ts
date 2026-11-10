@@ -26,6 +26,12 @@ function home() {
 const ask = (h: string, tool: string, tool_input: Record<string, unknown>) =>
   askPermission(h, { ...INPUTS["permission-request"], session_id: SESSION, tool_name: tool, tool_input }).id;
 
+/** Opens Home, asking for its lists every 200 ms. */
+async function homeFast(page: import("playwright-core").Page, base: string) {
+  await page.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 200 }));
+  await page.goto(`${base}/`);
+}
+
 /** Waits out the moment Allow once ignores presses after the cards appeared or moved. */
 const settled = (page: { waitForTimeout(ms: number): Promise<void> }) => page.waitForTimeout(600);
 
@@ -62,8 +68,7 @@ test("Deny opens its reason box, keeps what is typed through a refresh, and send
   const id = ask(h, "Edit", { file_path: "/repo/src/app.ts", old_string: "const a = 1;", new_string: "const a = 2;" });
   await withBrowser(
     async ({ base, page }) => {
-      await page.addInitScript(() => Object.assign(window, { HOOP_PENDING_MS: 200 }));
-      await page.goto(`${base}/`);
+      await homeFast(page, base);
       const card = page.locator(`[data-permission="${id}"]`);
       await card.waitFor();
       await settled(page);
@@ -200,6 +205,100 @@ test("on Work, a Deny box survives refreshes, the heading keeps sentence case, a
       await page.waitForTimeout(900);
       assert.equal(await box.inputValue(), "Keep the build");
       assert.equal(await box.evaluate((el: HTMLInputElement) => [el === document.activeElement, el.selectionStart].join()), "true,4", "focus and cursor stay");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+/** The y of a prompt's Allow once on the page. */
+const allowY = async (page: import("playwright-core").Page, id: string) => (await page.locator(`[data-permission="${id}"] [data-perm-allow]`).boundingBox())!.y;
+
+test("regression: the next card keeps its place for the hold after Allow once, or after the terminal answered", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const first = ask(h, "Bash", { command: "echo one" });
+  const second = ask(h, "Bash", { command: "echo two" });
+  const third = ask(h, "Bash", { command: "echo three" });
+  await withBrowser(
+    async ({ base, page }) => {
+      await homeFast(page, base);
+      await page.locator(`[data-permission="${third}"] [data-perm-allow]`).waitFor();
+      await settled(page);
+      const y = await allowY(page, second);
+      await page.locator(`[data-permission="${first}"] [data-perm-allow]`).click();
+      await page.locator(`[data-permission-note="${first}"]`).waitFor();
+      for (const wait of [100, 400, 400]) {
+        await page.waitForTimeout(wait);
+        assert.ok(Math.abs((await allowY(page, second)) - y) < 1, "the next card stays under the pointer's place");
+      }
+      // It moves up once the hold lets go.
+      await page.waitForFunction(
+        ([id, at]) => document.querySelector(`[data-permission="${id}"] [data-perm-allow]`)!.getBoundingClientRect().y < (at as number) - 1,
+        [second, y] as const,
+        { timeout: 5000 },
+      );
+      // Answered in the terminal: the card held the same way.
+      const y3 = await allowY(page, third);
+      settlePermission(h, second, "terminal");
+      await page.locator(`[data-permission-note="${second}"]`).waitFor();
+      await page.waitForTimeout(300);
+      assert.ok(Math.abs((await allowY(page, third)) - y3) < 1, "a card answered elsewhere holds its place too");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("regression: while an answer is sent focus stays on its own card, and a failed answer gives it back its Allow once", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const first = ask(h, "Bash", { command: "echo one" });
+  ask(h, "Bash", { command: "echo two" });
+  await withBrowser(
+    async ({ base, page }) => {
+      let fail = true;
+      await page.route("**/api/permissions/*", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        await new Promise((r) => setTimeout(r, 600));
+        return fail ? route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"no"}' }) : route.continue();
+      });
+      await page.goto(`${base}/`);
+      const allow = page.locator(`[data-permission="${first}"] [data-perm-allow]`);
+      await allow.waitFor();
+      await settled(page);
+      await allow.focus();
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(250);
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-permission")), first, "focus is on the card being answered, no button");
+      await page.locator(`[data-permission="${first}"] .rename-error`, { hasText: "no" }).waitFor();
+      assert.equal(
+        await page.evaluate(() => document.activeElement?.getAttribute("data-perm-allow")),
+        first,
+        "a failed answer gives the focus back to its own Allow once",
+      );
+      assert.equal(readPermission(h, first)!.state, "waiting");
+      fail = false;
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("a MultiEdit shows each edit's own fields after its change, replace_all first and bold", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const id = ask(h, "MultiEdit", {
+    file_path: "/repo/a.ts",
+    edits: [
+      { old_string: "a", new_string: "b", replace_all: true },
+      { old_string: "c", new_string: "d" },
+    ],
+  });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/`);
+      const card = page.locator(`[data-permission="${id}"]`);
+      await card.waitFor();
+      assert.deepEqual(await card.locator(".perm-del, .perm-add").allTextContents(), ["- a", "+ b", "- c", "+ d"]);
+      assert.deepEqual(await card.locator(".perm-fields dt").allTextContents(), ["replace_all"], "the first edit's replace_all, and nothing for the second");
+      assert.equal(await card.locator(".perm-fields .perm-widens").count(), 1);
+      // It follows its own edit's change.
+      assert.equal(await card.locator(".perm-call + .perm-fields").count(), 1);
     },
     new Hoop(new Store(h)),
   );
