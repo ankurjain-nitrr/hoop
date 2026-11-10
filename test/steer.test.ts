@@ -259,6 +259,7 @@ test("the gate refuses a removed todo, an edited one once, every call of a stopp
   assert.match(removed!.deny, /^ankur removed todo #3 "Run the test suite" in hoop's Work view\. Don't start it or mark it done/);
   assert.ok(workGate(home, start("3", { status: "completed" })));
   assert.ok(workGate(home, start("3")), "a removed todo stays refused");
+  assert.ok(workGate(home, start("3", { taskId: 3 })), "a numeric task ID names the same todo");
   assert.equal(workGate(home, start("3", { status: "deleted" })), undefined);
   // An edited todo: refused once with the new text; then, or with the new subject, it goes on.
   assert.equal(workGate(home, start("4", { subject: "Open a draft pull request" })), undefined);
