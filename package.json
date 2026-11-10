@@ -48,7 +48,7 @@
     "@types/node": "26.6.5",
     "acorn": "8.19.0",
     "axe-core": "4.14.0",
-    "dependency-cruiser": "18.7.0",
+    "dependency-cruiser": "18.7.2",
     "fast-check": "4.10.2",
     "jscpd": "5.4.2",
     "knip": "6.43.0",
