@@ -20,6 +20,11 @@ All notable changes to hoop are listed here. The format follows
 - A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
   issue on a release Monday when one is due; it publishes nothing (#212).
 
+### Changed
+
+- A review's receipt says whether Claude responded after reading it: "Read by Claude 14:02 · No
+  response yet", then "Revised by Claude 14:10" or "Answered by Claude 14:06" (#271).
+
 ### Fixed
 
 - A conversation resumed under a new session ID (as `claude --resume` does for a session that was

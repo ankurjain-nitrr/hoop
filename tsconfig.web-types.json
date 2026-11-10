@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.web.json",
+  // Writes each checked web module's declarations beside it, from its JSDoc, for the build and for
+  // src and test. They are generated (web/*.d.ts is ignored), so the JSDoc is the one source.
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": ".",
+    "outDir": "."
+  },
+  // Without it, the default exclude would leave out outDir, here the whole checkout.
+  "exclude": ["node_modules"]
+}

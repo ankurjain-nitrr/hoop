@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "checkJs": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": { "/*": ["./web/*"] }
+  },
+  "include": ["web/links.js", "web/doc-lines.js", "web/place.js", "web/status.js", "web/esc.js", "web/icons.js"]
+}

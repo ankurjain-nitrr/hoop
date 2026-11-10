@@ -265,6 +265,22 @@ const TOLD = {
   off: () => MESSAGES_OFF,
 };
 
+/** What Claude did after reading a review, as its receipt says it. */
+const RESPONDED = { revised: "Revised", replied: "Answered" };
+
+/**
+ * A read review's receipt: what Claude did after reading it ("Revised by Claude 21:10", "Answered by
+ * Claude 21:06"), else when it read it, with "No response yet" while the server says the review waits
+ * on Claude's response. A review with no entry in `responses` (an approval, a closed review, a
+ * session's own comment, or a quick question's card) says only when Claude read it.
+ */
+function readText(r, key, of) {
+  const who = r.by === "agent" ? "Claude" : r.by;
+  const done = of.responses?.[key];
+  if (done && RESPONDED[done.kind]) return `${RESPONDED[done.kind]} by ${who} ${readAt(done.at)}`;
+  return `Read by ${who} ${readAt(r.at)}${done?.kind === "none" ? " · No response yet" : ""}`;
+}
+
 /**
  * Whether and when Claude read a submitted review, as a short status: "Read by Claude 21:04", "Sent
  * to Claude 21:03", or "Not read yet" with why it didn't reach the session; for a review that asks
@@ -273,7 +289,7 @@ const TOLD = {
  */
 export function receiptText(key, of = state.view) {
   const r = of?.receipts?.[key];
-  if (r) return `Read by ${r.by === "agent" ? "Claude" : r.by} ${readAt(r.at)}`;
+  if (r) return readText(r, key, of);
   const d = of?.deliveries?.[key];
   if (of?.asks_to_act?.[key] === false) return d && TOLD[d.outcome] ? TOLD[d.outcome](d) : "Nothing for Claude to act on";
   return d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : "Not read yet";
@@ -1642,10 +1658,11 @@ function watchReceipts() {
     const v = state.view;
     const keys = [...document.querySelectorAll("[data-receipt]")].map((el) => el.dataset.receipt);
     if (!v || document.visibilityState !== "visible" || keys.every((k) => v.receipts?.[k])) return;
-    const { receipts } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
+    const { receipts, responses } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
     if (!receipts || state.view !== v) return;
     const sent = sentUnread(v);
     v.receipts = receipts;
+    if (responses) v.responses = responses;
     // The agent line shows again once Claude read the review, saying what it does now.
     if (sent && !sentUnread(v)) await askAgent();
     if (state.view === v) showReceipts();
