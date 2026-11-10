@@ -3077,3 +3077,38 @@ input.btext {
 .perm-answered {
   color: var(--muted);
 }
+/* A permission prompt's tool: a tag, mono and outlined, in grey since it names a fact. */
+.tag-tool {
+  font-family: var(--font-mono);
+  font-size: var(--text-tag);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-tag);
+  padding: 0 var(--space-1);
+  color: var(--muted);
+  margin-right: var(--space-1);
+}
+/* Work's part headings are small capitals; a prompt's heading keeps sentence case. */
+.work-session .permission h3 {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+/* A call's other fields, those that widen what it may do first, in bold. */
+.permission .perm-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-small);
+}
+.permission .perm-fields dt {
+  font-family: var(--font-mono);
+}
+.permission .perm-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.permission .perm-fields .perm-widens {
+  font-weight: 700;
+}

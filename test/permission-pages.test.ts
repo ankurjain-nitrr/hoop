@@ -26,6 +26,9 @@ function home() {
 const ask = (h: string, tool: string, tool_input: Record<string, unknown>) =>
   askPermission(h, { ...INPUTS["permission-request"], session_id: SESSION, tool_name: tool, tool_input }).id;
 
+/** Waits out the moment Allow once ignores presses after the cards appeared or moved. */
+const settled = (page: { waitForTimeout(ms: number): Promise<void> }) => page.waitForTimeout(600);
+
 /** "14:02" as the pages write a time today: its spaces don't break. */
 const CLOCK = /\d{1,2}:\d{2}(?: [AP]M)?$/;
 
@@ -37,12 +40,13 @@ test("Home's Waiting on you shows a prompt in full, and Allow once answers it th
       await page.goto(`${base}/`);
       const card = page.locator(`.list [data-permission="${id}"]`);
       await card.waitFor();
+      await settled(page);
       assert.equal(await card.getByRole("heading").textContent(), "Waiting on you: permission");
-      assert.equal(await card.locator(".tag").textContent(), "Bash");
+      assert.equal(await card.locator(".tag-tool").textContent(), "Bash");
       assert.equal(await card.locator(".perm-call").textContent(), "rm -rf build\nmkdir build", "the command in full");
       assert.equal(await card.locator(".d").textContent(), "Clean the build folder");
       assert.match((await page.locator("#g-waiting").textContent()) ?? "", /Waiting on you\s*1/, "it counts in Waiting on you");
-      await card.getByRole("button", { name: "Allow once" }).click();
+      await card.getByRole("button", { name: /^Allow once:/ }).click();
       const note = page.locator(`.list .perm-answered[data-permission="${id}"]`);
       await note.waitFor();
       assert.match((await note.textContent()) ?? "", /^Bash Allowed in hoop /);
@@ -62,16 +66,20 @@ test("Deny opens its reason box, keeps what is typed through a refresh, and send
       await page.goto(`${base}/`);
       const card = page.locator(`[data-permission="${id}"]`);
       await card.waitFor();
+      await settled(page);
       // A change shows its file, and its lines as removed and added.
       assert.equal(await card.locator(".d").textContent(), "/repo/src/app.ts");
       assert.deepEqual(await card.locator(".perm-del, .perm-add").allTextContents(), ["- const a = 1;", "+ const a = 2;"]);
-      await card.getByRole("button", { name: "Deny" }).click();
+      await card.getByRole("button", { name: /^Deny:/ }).click();
       const box = card.getByLabel("Reason (optional; Claude reads it)");
       assert.equal(await box.evaluate((el) => el === document.activeElement), true, "focus goes to the box");
       await box.fill("Keep a = 1");
       await page.waitForTimeout(700);
       assert.equal(await box.inputValue(), "Keep a = 1", "a refresh waits while the box is open");
-      await card.locator("form").getByRole("button", { name: "Deny" }).click();
+      await card
+        .locator("form")
+        .getByRole("button", { name: /^Deny:/ })
+        .click();
       await page.locator(`.perm-answered[data-permission="${id}"]`, { hasText: "Denied in hoop" }).waitFor();
       assert.deepEqual([readPermission(h, id)!.state, readPermission(h, id)!.reason], ["denied", "Keep a = 1"]);
     },
@@ -91,15 +99,107 @@ test("Work shows a session's prompt under what it does, and says where each was 
       await page.goto(`${base}/work`);
       const card = page.locator(`section.work-session [data-permission="${waiting}"]`);
       await card.waitFor();
+      await settled(page);
       assert.equal(await card.getByRole("heading").textContent(), "Waiting on you: permission");
       assert.equal(await card.locator(".perm-call").textContent(), "# Notes\nFirst line");
       assert.match((await page.locator(`[data-permission="${terminal}"]`).textContent()) ?? "", /^Bash Answered in the terminal /);
       assert.equal(await page.locator(`[data-permission="${handed}"]`).textContent(), "Bash Answer this in the terminal.");
       // The terminal answers first: Allow once on the page then says how it went.
       settlePermission(h, waiting, "terminal");
-      await card.getByRole("button", { name: "Allow once" }).click();
+      await card.getByRole("button", { name: /^Allow once:/ }).click();
       await page.locator(`[data-permission="${waiting}"]`, { hasText: "Answered in the terminal" }).waitFor();
       assert.equal(readPermission(h, waiting)!.state, "terminal", "the first answer won");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("regression: a second click right after Allow once allows nothing more, and focus lands on the note", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const first = ask(h, "Bash", { command: "echo one" });
+  const second = ask(h, "Bash", { command: "echo two" });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/`);
+      const button = page.locator(`[data-permission="${first}"] [data-perm-allow]`);
+      await button.waitFor();
+      await settled(page);
+      // Cards go oldest first, so the second sits below the first.
+      const ids = await page.locator(".list article.permission").evaluateAll((els) => els.map((el) => el.getAttribute("data-permission")));
+      assert.deepEqual(ids, [first, second]);
+      assert.equal(await button.getAttribute("aria-label"), "Allow once: Bash echo one", "each card's buttons name it");
+      const box = (await button.boundingBox())!;
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(150);
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.locator(`[data-permission-note="${first}"]`).waitFor();
+      await page.waitForTimeout(600);
+      assert.deepEqual([readPermission(h, first)!.state, readPermission(h, second)!.state], ["allowed", "waiting"], "only the first was allowed");
+      // A click that lands on the held card moves the focus off it; never onto a button.
+      assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), "BUTTON");
+      // A double click counts once too.
+      await page.waitForTimeout(1600);
+      await page.locator(`[data-permission="${second}"] [data-perm-allow]`).dblclick();
+      await page.locator(`[data-permission-note="${second}"]`).waitFor();
+      // Focus goes to the note, not a button.
+      await page.waitForFunction((id) => document.activeElement?.getAttribute("data-permission-note") === id, second, { timeout: 5000 });
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("a card shows every field of the call, those that widen it first, and hidden characters as markers", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const bash = ask(h, "Bash", {
+    command: "echo \u202Eevil\u200B",
+    description: "Say it",
+    dangerouslyDisableSandbox: true,
+    run_in_background: true,
+    timeout: 600000,
+  });
+  const edit = ask(h, "Edit", { file_path: "/repo/a.ts", old_string: "", new_string: "x", replace_all: true });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.goto(`${base}/`);
+      const b = page.locator(`[data-permission="${bash}"]`);
+      await b.waitFor();
+      assert.equal(await b.locator(".perm-call").textContent(), "echo ⟨U+202E⟩evil⟨U+200B⟩");
+      assert.deepEqual(await b.locator(".perm-fields dt").allTextContents(), ["dangerouslyDisableSandbox", "run_in_background", "timeout"]);
+      assert.deepEqual(await b.locator(".perm-fields dd").allTextContents(), ["true", "true", "600000"]);
+      assert.equal(await b.locator(".perm-widens").count(), 2, "the fields that widen the call stand out");
+      const e = page.locator(`[data-permission="${edit}"]`);
+      assert.deepEqual(await e.locator(".perm-del, .perm-add").allTextContents(), ["+ x"], "an empty old text has no line");
+      assert.deepEqual(await e.locator(".perm-fields dt").allTextContents(), ["replace_all"]);
+      // The tool is a tag; the reason box's Deny is a plain button, and Allow once the only primary.
+      assert.equal(await b.locator(".tag-tool").evaluate((el) => getComputedStyle(el).borderStyle), "solid");
+      await b.getByRole("button", { name: /^Deny:/ }).click();
+      const deny = b.locator("form button[type=submit]");
+      assert.equal(await deny.evaluate((el) => el.classList.contains("danger") || el.classList.contains("primary")), false);
+      assert.equal(await b.getByLabel("Reason (optional; Claude reads it)").getAttribute("maxlength"), "200");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("on Work, a Deny box survives refreshes, the heading keeps sentence case, and the prompt counts as waiting on you", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const id = ask(h, "Bash", { command: "rm -rf build" });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.addInitScript(() => Object.assign(window, { HOOP_WORK_MS: 200 }));
+      await page.goto(`${base}/work`);
+      const card = page.locator(`section.work-session [data-permission="${id}"]`);
+      await card.waitFor();
+      await settled(page);
+      assert.equal(await card.getByRole("heading").evaluate((el) => getComputedStyle(el).textTransform), "none");
+      assert.match((await page.locator(".work-counts").textContent()) ?? "", /1 waiting on you/);
+      await card.getByRole("button", { name: /^Deny:/ }).click();
+      const box = card.getByLabel("Reason (optional; Claude reads it)");
+      await box.pressSequentially("Keep the build");
+      await box.evaluate((el: HTMLInputElement) => el.setSelectionRange(4, 4));
+      await page.waitForTimeout(900);
+      assert.equal(await box.inputValue(), "Keep the build");
+      assert.equal(await box.evaluate((el: HTMLInputElement) => [el === document.activeElement, el.selectionStart].join()), "true,4", "focus and cursor stay");
     },
     new Hoop(new Store(h)),
   );

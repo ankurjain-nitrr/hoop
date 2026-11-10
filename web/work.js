@@ -26,7 +26,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldedByDefaul
 import { inlineHtml, titleHtml } from "./inline.js";
 import { statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
-import { loadPermissions, onPermissions, prompts, promptHtml } from "./permissions.js";
+import { loadPermissions, onPermissions, permissionFormOpen, prompts, promptHtml } from "./permissions.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
 import { REVIEW_LINK, reviewPath } from "./links.js";
@@ -769,6 +769,10 @@ function hooksHtml(hooks) {
 function countsHtml(sessions, now = Date.now()) {
   if (!sessions.length) return "";
   const c = counts(sessions, now);
+  // A waiting permission prompt waits on the person, unless its session already counts as waiting for it.
+  for (const p of prompts().filter((x) => x.state === "waiting"))
+    if (sessions.some((s) => s.id === p.session) && !c.waiting.some((w) => w.session === p.session))
+      c.waiting.push({ session: p.session, kind: "permission", id: p.id });
   const part = (state, words) => {
     const first = c[state][0];
     const text = `${c[state].length} ${words}`;
@@ -864,7 +868,8 @@ function paint() {
 }
 
 // Work shows the permission prompts again when they change, or after an answer.
-onPermissions(() => location.pathname === "/work" && refresh());
+// The person's own press shows at once; a load waits for an open Deny box, as Home does.
+onPermissions((local) => location.pathname === "/work" && (local ? paint() : refresh()));
 
 async function load() {
   // Each load asks for the permission prompts too.
@@ -892,6 +897,8 @@ const press = { on: false, held: false };
 
 /** Repaints for a refresh, or once the press being held is released. */
 function refresh() {
+  // A refresh waits while a Deny box is open, so it never moves the cursor or drops what is typed.
+  if (permissionFormOpen()) return;
   if (press.on) press.held = true;
   else paint();
 }
@@ -1061,8 +1068,8 @@ function close() {
 /** The stalled link opens the folds around the first stalled item, then goes to it. */
 function goTo(go) {
   const [session, kind] = go.dataset.goto.split("|");
-  // A session counted for itself needs only its own fold open.
-  unfold(kind === "session" ? [`work:${session}`] : [`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
+  // A session counted for itself, or for a permission prompt, needs only its own fold open.
+  unfold(kind === "session" || kind === "permission" ? [`work:${session}`] : [`work:${session}`, `work:${session}:${kind === "todo" ? "todos" : "agents"}`]);
   const target = go.getAttribute("href");
   paint();
   focusRow(app.querySelector(target));
