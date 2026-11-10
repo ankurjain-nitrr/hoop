@@ -13,5 +13,8 @@ web/send.d.ts
 web/build-drafts.d.ts
 web/api.d.ts
 web/tips.d.ts
+web/frame.d.ts
+web/fold.d.ts
+web/outline.d.ts
 evals/runs/
 *.tgz
