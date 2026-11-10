@@ -14,7 +14,21 @@ input=$(cat)
 session=$(printf '%s' "$input" | grep -o '"session_id" *: *"[A-Za-z0-9_-]\{1,128\}"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')
 [ -n "$session" ] || exit 0
 dir="${HOOP_HOME:-$HOME/.hoop}/work"
-[ -e "$dir/$session.gate" ] || [ -e "$dir/$session.agents" ] || [ -e "$dir/$session.order" ] || [ -e "$dir/$session.blocked" ] || [ -e "$dir/$session.review" ] || exit 0
+# While permission prompts are on, a call of the permission answers' API at the pages' address, or a
+# browser tool's script that names it, needs hoop, which refuses it.
+answers=
+case "$input" in
+  *'/api/permissions'*)
+    if grep -qxE "[[:space:]]*permission_prompts[[:space:]]*" "${HOOP_HOME:-$HOME/.hoop}/on" 2>/dev/null; then
+      if printf '%s' "$input" | grep -qE '(localhost|127\.0\.0\.1)(:[0-9]+)?/api/permissions'; then
+        answers=1
+      else
+        case "$input" in *'__browser_evaluate"'* | *'__browser_run_code'* | *'__evaluate_script"'*) answers=1 ;; esac
+      fi
+    fi
+    ;;
+esac
+[ -n "$answers" ] || [ -e "$dir/$session.gate" ] || [ -e "$dir/$session.agents" ] || [ -e "$dir/$session.order" ] || [ -e "$dir/$session.blocked" ] || [ -e "$dir/$session.review" ] || exit 0
 
 stop=
 by=
@@ -68,6 +82,7 @@ if [ -z "$need" ] && [ -e "$dir/$session.review" ]; then
       *'"tool_name":"Bash"'* | *'"tool_name": "Bash"'*) need=1 ;;
   esac
 fi
+[ -n "$answers" ] && need=1
 [ -n "$need" ] || exit 0
 # Off when hoop's off list names tool_gate: every call goes ahead, a stopped agent's too.
 . "$(dirname "$0")/off.sh"

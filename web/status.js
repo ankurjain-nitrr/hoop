@@ -5,6 +5,9 @@
 import { esc } from "./esc.js";
 import { icons } from "./icons.js";
 
+/** @typedef {{ label: string; tone: string; icon: string }} Status */
+
+/** @type {Record<string, Status>} */
 export const REVIEW = {
   building: { label: "Building", tone: "info", icon: "list" },
   awaiting_review: { label: "Awaiting review", tone: "wait", icon: "person" },
@@ -41,9 +44,17 @@ export const ACTION = {
   withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
 };
 
+/** What Home and Work say of a message hoop didn't send, since hoop's off list turns messages into a session off. */
+export const MESSAGES_OFF = "Not sent: messages into a session are off in hoop's off list";
+
+/** What a review or an answer sent with messages into a session off says: it is kept, and Claude reads it when it asks. */
+export const SAVED_OFF = "Saved. Messages into a session are off in hoop's off list, so Claude wasn't told; it reads this with hoop_wait or hoop_feedback.";
+
 /** A review whose latest submitted review the agent hasn't read, while it isn't waiting for one. */
 export const READ = {
   unread: { label: "Not read yet", tone: "info", icon: "clock" },
+  // Unread since messages into a session are off in hoop's off list: nothing told Claude.
+  not_sent: { label: MESSAGES_OFF, tone: "muted", icon: "minus" },
 };
 
 /** A todo's or subagent's state on the Work page, and a session's. */
@@ -63,15 +74,28 @@ export const WORK = {
   ended: { label: "Ended", tone: "muted", icon: "close" },
 };
 
-/** A review's status badge, or a pull request's state badge from `names` (PR). */
+/**
+ * A review's status badge, or a pull request's state badge from `names` (PR).
+ * @param {string} key
+ * @param {Record<string, Status>} [names]
+ */
 export function statusBadge(key, names = REVIEW) {
   const s = (Object.hasOwn(names, key) ? names[key] : undefined) ?? { label: String(key), tone: "muted", icon: "clock" };
   return `<span class="badge tone-${s.tone}" data-status="${esc(key)}">${icons[s.icon]}<span>${esc(s.label)}</span></span>`;
 }
 
-/** The two verdicts a person's review takes, as the review page names them. */
+/** @typedef {"approved" | "changes_requested"} Verdict */
+
+/**
+ * The two verdicts a person's review takes, as the review page names them.
+ * @type {Record<Verdict, string>}
+ */
 export const VERDICT = { approved: "Approve", changes_requested: "Request changes" };
 
+/**
+ * @param {number} n
+ * @param {string} what
+ */
 const some = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
 
 /**
@@ -84,8 +108,11 @@ const some = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
  * or open, the verdict is Approve, `held` by the questions left, since a request for changes would
  * ask no one for anything.
  * The page offers only this verdict, and src/rules.ts refuses the other one, so they never disagree.
+ * @param {{ comments?: number; answers?: number; threads?: number; questions?: number; unanswered?: number; file?: boolean }} state
+ * @returns {{ verdict: Verdict; reason: string; held?: boolean }}
  */
 export function verdictNow({ comments = 0, answers = 0, threads = 0, questions = 0, unanswered = 0, file = false }) {
+  /** @type {string[]} */
   const why = [];
   if (comments) why.push(some(comments, "new comment"));
   if (answers && !file) why.push(some(answers, "new answer"));

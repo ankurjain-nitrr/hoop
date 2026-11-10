@@ -142,7 +142,8 @@ export const receivedBy = (r: Receipt | undefined, session: string | undefined):
  * messages, `other_home` when the live session uses another hoop home (so nothing was sent), or
  * `failed` with the reason.
  */
-export type Delivery = { outcome: "sent" | "waiting" | "no_session" | "other_home" | "failed"; at: string; error?: string };
+/** How a message to a session went; `off` when hoop's off list turns messages into a session off (src/off.ts). */
+export type Delivery = { outcome: "sent" | "waiting" | "no_session" | "other_home" | "failed" | "off"; at: string; error?: string };
 
 /** A submitted review's key in receipts: `<revision>.<index>`, its place in that revision's feedback. */
 export const receiptKey = (revision: number, index: number) => `${revision}.${index}`;

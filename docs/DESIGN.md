@@ -80,6 +80,7 @@ be cut short and run again; until it runs, sessions and commands read the review
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   prs.json                 tracked pull requests: URL, the session that opened it, when
+  resumes.json             each session resumed under a new ID, with the session it continues
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   compact/<session>.json   the reviews and asks open for a session before its latest compaction
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
@@ -676,7 +677,12 @@ requests and action items go the same way (`sendLive`), and so do the Work page'
 (`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
 The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
-`waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
+`waiting` as "Sent to Claude <time>". Once read, the view's `responses` (by receipt key, also
+returned by the receipts poll) say what Claude did after it read a review that asks it to act and
+isn't a session's own comment: its first revision after the read that no reviewer's Apply made
+("Revised by Claude <time>"), else its first reply after the read ("Answered by Claude <time>"),
+else `none` ("Read by Claude <time> · No response yet"). Any other review has no entry and reads
+only "Read by". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
 agent's own replies and comments are never sent. The review page's header says what the owner's
 session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
@@ -708,7 +714,7 @@ that changed.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
 `sessions/<pid>.json` with a new `sessionId`, and `pid`, `procStart` and `startedAt` stay
-(`/compact` and `claude --resume` keep the ID). So a review's or action item's owner record keeps
+(`/compact` and, usually, `claude --resume` keep the ID). So a review's or action item's owner record keeps
 the process it was made in (`owner.process`: `pid` and `procStart`, read from that file in the
 pages process), and the session running in that process now acts as the owner (`actsAs` in
 `src/claude-sessions.ts`). The caller's process is looked up in the session files, never taken from the
@@ -722,6 +728,20 @@ file counts only while its process started when `procStart` says (checked with `
 30 seconds), so a file a killed process left behind doesn't match a reused process ID. A known gap:
 `/resume <other>` inside a running process also changes its ID, and hoop then follows the process
 into that other conversation.
+
+`claude --resume` usually keeps the session ID. Resuming a conversation whose session still runs,
+or forking one, goes on under a new session ID in a new process, so neither links it to its earlier
+work. Its SessionStart hook (source `resume`) names the transcript it goes on from, which must lie
+in Claude Code's `projects` folder: the last other `sessionId` in the transcript's last 256 KB (the
+latest session in a chain of resumes, since each one's entries follow the one before), or else the
+session the transcript is named after, is the earlier session (`resumedFrom` in `src/resumes.ts`).
+`hoop session-start` sends the input to the pages process (the `resume` write) and waits at most 2
+seconds, never starting one, as the other hooks don't; with no pages process there is no link and
+the note still prints. The pages process records new → earlier in `<hoop home>/resumes.json` only
+when the earlier session no longer runs (no live session file names it), so a fork running beside
+its original never acts as it, and refuses a link that would loop. `actsAs` then lets a session act
+as any session it was resumed from, through a chain of resumes, for reviews, quick questions, action
+items and the person's comments and added todos on Work, as after `/clear`.
 
 Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
 comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on
@@ -977,8 +997,14 @@ comment turns a switch off; odd spacing leaves it on). Each script checks its sw
 `hoop.sh`: a hook that is off exits 0 with no output, so Claude Code goes on as without it, and
 never starts hoop or Node.js. A file rather than environment variables, since a hook gets Claude
 Code's environment and the pages process the environment of whichever session started it; one
-file reaches every session and process alike, and the pages process can read it the same way
-(`test/off-switches.test.ts`).
+file reaches every session and process alike, and the pages process reads it the same way
+(`src/off.ts`, `test/off-switches.test.ts`). Two switches act in the pages process: with
+`messages` off, every message into a session (a review, a close, a build request, an action
+item's close) records the delivery `off` and sends nothing, and Steer treats every session as
+unreachable, so Work changes wait for the gate; `/api/work` carries `messages_off` so Work says
+why. With `mermaid` off, `/api/info` carries `diagrams_off`; `mountDiagrams` asks for it before
+making any frame, and shows each diagram's source under a muted note, which isn't a diagram error,
+so nothing tells Claude of it.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|
@@ -996,6 +1022,7 @@ file reaches every session and process alike, and the pages process can read it 
 | SessionStart (startup, resume, clear, compact) | `session-start.sh`, `hoop session-start` (on startup, only for a session with a work record or a `.hoop` folder beside its transcript): adds a note of at most 1,500 characters to Claude's context with the session's queued todos in the person's order, its reviews and quick questions with feedback it hasn't received (an approval too), and the reviews it owes a revision or a reply; on compact also the reviews and asks open since or in the PreCompact snapshot, when that was taken at most 5 minutes before (`SNAPSHOT_FRESH_MS`); the queue is always the live Work record's, never the snapshot's (`src/session-start.ts`). It reads hoop's files and writes nothing | sync, 6 s; hoop runs in the background and a watchdog stops it after 4 s (`HOOP_START_WAIT`; POSIX sh, no `perl`) | Fails open: no hoop folder, no hoop, a crash, input that isn't a session start or the watchdog print nothing; it always exits 0. Needs no pages process and never starts one | Claude starts without the note, as before: it finds its queue with `hoop_work_queue` and its feedback with `hoop_feedback`, and the Stop gate still catches feedback that comes during a turn |
 | PreCompact | `pre-compact.sh`, `hoop pre-compact`: sends the hook's input to the pages process (`pre_compact`), which writes the session's open reviews and quick questions to `compact/<session>.json`, or removes that file when none is open, and the hook's stamp | sync, 6 s; a watchdog stops hoop after 4 s (`HOOP_COMPACT_WAIT`), and hoop gives up on the pages process after 2 s | Fails open: never blocks the compaction; it always exits 0 and prints nothing. No pages process: dropped, never started | The note after the compaction lists what is open now, without what only the snapshot kept |
 | PermissionRequest | `track-work.sh` (a session with work only): the prompt's tool and input digest | async, 30 s | Dropped | The row doesn't say "Waiting on you: a permission prompt" |
+| PermissionRequest | `permission.sh`, `hoop permission-hook` (only with `permission_prompts` in `~/.hoop/on`): records the prompt with its full input through the pages process (`permission_ask`), then waits for the first answer: Allow once or Deny on a page becomes its decision; the call's result in the transcript means the terminal answered | sync, 600 s; hoop hands the prompt to the terminal after 570 s (`HOOP_PERMISSION_WAIT`), under a 590 s `perl` alarm | Fails open to the terminal: off, no hoop, no pages process, a crash or the alarm print nothing, and the terminal's prompt decides. It never decides by itself | The terminal asks as without hoop |
 | Notification (permission_prompt) | `track-work.sh` (a session with work only): marks the prompt shown | async, 30 s | Dropped | As for PermissionRequest |
 
 Every input that reaches the pages process through `work_hook`, `work_gate` or `pr_hook` stamps
@@ -1133,6 +1160,41 @@ parked ones apart (`parked`, with `parked_note`).
   - it was made after `sources_from` and answered
 
   It stays so until the person dismisses it (`dismissed`, `POST /api/work/<session>/dismiss`).
+- **Permission prompts** (`src/permissions.ts`, `src/permission-hook.ts`, decided in
+  rv_mw7wkyez20853f). Off until `hoop init`'s yes adds `permission_prompts` to hoop's on list,
+  `~/.hoop/on`, read as the off list is. Then `permission.sh` runs `hoop permission-hook` on every
+  PermissionRequest. It sends the prompt to the pages process, which keeps it in
+  `permissions/<id>.json` with the tool's input in full, and polls that file and the session's
+  transcript: an answer from a page (`POST /api/permissions/<id>`, Allow once or Deny with an
+  optional reason, which goes to Claude as the deny's message) becomes the hook's decision; the call
+  the prompt is for (the latest call of its tool and input with no result) getting its result in the
+  transcript means the person answered in the terminal, which still asks, and the hook ends with no
+  decision (`terminal`); at 570 s, or on a signal, it hands the prompt to the terminal (`handed`).
+  Writes run under one queue key, so the first answer wins and a later one is refused with how it
+  was answered. The input goes as soon as a prompt settles, and a settled record a day later. A
+  decision is only ever allow or deny: never `updatedInput`, `updatedPermissions` or a rule.
+  Claude has no tool for it: `permission-hook` is a terminal command, not an operation.
+  An answer comes only from a page these pages served. `POST /api/permissions/<id>` needs the
+  page's own Origin (`http://` and the host it asked, one of the allowed ones), `Sec-Fetch-Site:
+  same-origin`, which only a browser sets, and the pages process's answer key: 32 random bytes it
+  makes as it starts and hands only to a page it serves, as an HttpOnly, SameSite=Strict cookie
+  whose path is `/api/permissions`. The key is never written to disk, logged, or put in any reply's
+  body, the list of prompts included. While permission prompts are on, the Work gate also refuses a
+  session's own Bash or WebFetch call of the API at the pages' address
+  (`(localhost|127.0.0.1)(:port)?/api/permissions`), and a browser tool's script in a page
+  (Playwright's `browser_evaluate` and `browser_run_code`, Chrome DevTools' `evaluate_script`) that
+  names `/api/permissions`; `gate-work.sh` asks hoop for such a call. A mention of the path, as in a
+  grep or a commit message, is no call, and nothing is refused while the switch is off. Records are
+  the owner's alone: `permissions/` is 0700 and each record 0600. A prompt still waiting past a
+  hook's longest life (660 s), as when its hook was killed, is handed to the terminal and loses its
+  input. The hook reads only a transcript's last 512 KB (`tailLines`).
+  **The risk that remains:** a program the person runs that deliberately loads a page to get the
+  cookie and forges the browser's headers can still answer a prompt. So can a Claude session that
+  holds a browser tool (a Playwright or Chrome DevTools MCP server): it can open hoop's page and
+  click Allow once, with a real browser's headers and cookie. hoop leaves a browser tool's
+  navigation and clicks alone, since the design review drives hoop's pages that way, and a click
+  can't be told from the person's. hoop can't stop the person's own processes; the checks keep out
+  other sites, plain local requests, and the session's own commands and page scripts.
 - **Gate.** `plugins/hoop/scripts/gate-work.sh` runs on `PreToolUse` of every tool, synchronously.
   Each record write also writes small files beside it: `<session>.gate` while a todo change can
   stop a tool call, `<session>.agents` with `id<TAB>stop|note<TAB>person` lines, and
