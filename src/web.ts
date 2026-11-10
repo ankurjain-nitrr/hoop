@@ -129,6 +129,46 @@ function asksToAct(hoop: Hoop, meta: Meta): Record<string, boolean> {
 }
 
 /**
+ * What Claude did after reading a submitted review that asks it to act: a revision of its own (not a
+ * reviewer's Apply), a reply, or nothing yet ("none").
+ */
+type Responded = { kind: "revised" | "replied"; at: string } | { kind: "none" };
+
+/**
+ * Claude's response to each submitted review it read that asks it to act, by receipt key: its first
+ * revision after it read the review, else its first reply after that, else none yet. A review that
+ * asks Claude to act on nothing (an approval, a closed or file-opened review, a session's own
+ * comment) has no entry, and neither has one Claude hasn't read.
+ */
+export function responses(hoop: Hoop, meta: Meta): Record<string, Responded> {
+  const applied = new Set(hoop.store.applied(meta.id).map((a) => a.revision));
+  const revised = Array.from({ length: meta.revisions }, (_, i) => i + 1)
+    .filter((n) => n > 1 && !applied.has(n))
+    .flatMap((n) => hoop.store.revisionAt(meta.id, n) ?? [])
+    .sort();
+  const replies = hoop.store
+    .replies(meta.id)
+    .map((r) => r.at)
+    .sort();
+  const receipts = hoop.store.receipts(meta.id);
+  const out: Record<string, Responded> = {};
+  // A response in the same millisecond as the read still comes after it.
+  const after = (at: string, list: string[]) => list.find((x) => x >= at);
+  for (let n = 1; n <= meta.revisions; n++)
+    hoop.store.feedback(meta.id, n).forEach((fb, i) => {
+      const key = receiptKey(n, i);
+      const read = receipts[key]?.at;
+      if (!read || fb.session || !asksClaudeToAct(meta, fb)) return;
+      const rev = after(read, revised);
+      const reply = after(read, replies);
+      if (rev) out[key] = { kind: "revised", at: rev };
+      else if (reply) out[key] = { kind: "replied", at: reply };
+      else out[key] = { kind: "none" };
+    });
+  return out;
+}
+
+/**
  * Whether the agent hasn't read a review's latest submitted review yet and isn't waiting for one,
  * when that review asks it to act, so the feedback sits until someone tells the session.
  */
@@ -452,6 +492,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     deliveries: hoop.store.deliveries(id),
     // Whether each submitted review, by receipt key, asks Claude to act; the page says "not read yet" only then.
     asks_to_act: asksToAct(hoop, meta),
+    // What Claude did after reading each submitted review: revised or replied, and when.
+    responses: meta.ask ? undefined : responses(hoop, meta),
     agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
     ...(meta.ask ? { ask: askView(hoop, id) } : {}),
@@ -855,7 +897,15 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       },
     ],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
-    ["GET", reviewApi("/receipts"), (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
+    [
+      "GET",
+      reviewApi("/receipts"),
+      (_q, res, [id]) => {
+        const meta = hoop.store.meta(id!);
+        // What Claude did after each read, so a receipt that turns read shows "No response yet" at once.
+        send(res, 200, { receipts: hoop.store.receipts(meta.id), ...(meta.ask ? {} : { responses: responses(hoop, meta) }) });
+      },
+    ],
     [
       "POST",
       reviewApi("/feedback"),
