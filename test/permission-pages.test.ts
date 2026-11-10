@@ -23,8 +23,16 @@ function home() {
   workHook(h, { ...HOOKS["post-taskcreate"], tool_input: { subject: "Read the code" }, tool_response: { task: { id: "1", subject: "Read the code" } } });
   return h;
 }
+// Each prompt asked a moment after the last, so their order never rests on a tie.
+let tick = Date.now();
 const ask = (h: string, tool: string, tool_input: Record<string, unknown>) =>
-  askPermission(h, { ...INPUTS["permission-request"], session_id: SESSION, tool_name: tool, tool_input }).id;
+  askPermission(h, { ...INPUTS["permission-request"], session_id: SESSION, tool_name: tool, tool_input }, new Date((tick += 5))).id;
+
+/** A home with two Bash prompts, the first asked first. */
+function twoPrompts() {
+  const h = home();
+  return { h, first: ask(h, "Bash", { command: "echo one" }), second: ask(h, "Bash", { command: "echo two" }) };
+}
 
 /** Opens Home, asking for its lists every 200 ms. */
 async function homeFast(page: import("playwright-core").Page, base: string) {
@@ -120,9 +128,7 @@ test("Work shows a session's prompt under what it does, and says where each was 
 });
 
 test("regression: a second click right after Allow once allows nothing more, and focus lands on the note", { skip: BROWSER_SKIP }, async () => {
-  const h = home();
-  const first = ask(h, "Bash", { command: "echo one" });
-  const second = ask(h, "Bash", { command: "echo two" });
+  const { h, first, second } = twoPrompts();
   await withBrowser(
     async ({ base, page }) => {
       await page.goto(`${base}/`);
@@ -299,6 +305,66 @@ test("a MultiEdit shows each edit's own fields after its change, replace_all fir
       assert.equal(await card.locator(".perm-fields .perm-widens").count(), 1);
       // It follows its own edit's change.
       assert.equal(await card.locator(".perm-call + .perm-fields").count(), 1);
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("regression: a retry right after a failed Allow once gets a whole hold", { skip: BROWSER_SKIP }, async () => {
+  const { h, first, second } = twoPrompts();
+  await withBrowser(
+    async ({ base, page }) => {
+      let fail = true;
+      await page.route("**/api/permissions/*", (route) =>
+        route.request().method() === "POST" && fail
+          ? route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"no"}' })
+          : route.continue(),
+      );
+      await homeFast(page, base);
+      const allow = page.locator(`[data-permission="${first}"] [data-perm-allow]`);
+      await allow.waitFor();
+      await settled(page);
+      await allow.click();
+      await page.locator(`[data-permission="${first}"] .rename-error`, { hasText: "no" }).waitFor();
+      fail = false;
+      await page.waitForTimeout(600);
+      const y = await allowY(page, second);
+      await allow.click();
+      await page.locator(`[data-permission-note="${first}"]`).waitFor();
+      for (const wait of [300, 400, 400]) {
+        await page.waitForTimeout(wait);
+        assert.ok(Math.abs((await allowY(page, second)) - y) < 1, "the next card keeps its place for the whole hold");
+      }
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("regression: a hold behind an open Deny box counts down only once the card shows answered, and its redraw starts the quiet moment", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  const { h, first, second } = twoPrompts();
+  await withBrowser(
+    async ({ base, page }) => {
+      await homeFast(page, base);
+      await page.locator(`[data-permission="${second}"] [data-perm-allow]`).waitFor();
+      await settled(page);
+      await page
+        .locator(`[data-permission="${second}"]`)
+        .getByRole("button", { name: /^Deny:/ })
+        .click();
+      // Answered in the terminal while the box is open: the loads that bring it wait.
+      settlePermission(h, first, "terminal");
+      await page.waitForTimeout(2000);
+      await page.keyboard.press("Escape");
+      await page.locator(`[data-permission-note="${first}"]`).waitFor();
+      const y = await allowY(page, second);
+      // The quiet moment: a press right after the redraw allows nothing.
+      await page.locator(`[data-permission="${second}"] [data-perm-allow]`).click();
+      await page.waitForTimeout(300);
+      assert.equal(readPermission(h, second)!.state, "waiting", "a press right after the cards changed counts for nothing");
+      await page.waitForTimeout(700);
+      assert.ok(Math.abs((await allowY(page, second)) - y) < 1, "the hold still holds a second after the card showed answered");
     },
     new Hoop(new Store(h)),
   );

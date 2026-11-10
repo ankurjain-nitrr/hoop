@@ -7,7 +7,8 @@
 // Nothing here may approve by accident: cards go oldest first, so a new one joins below; an answered
 // card keeps its place and size for a moment, so the next one never moves up under the pointer; an
 // Allow once press is ignored for a moment after any answer or after the cards changed or moved, and
-// a double click counts once; focus after an answer goes to its note, never to a button that approves.
+// a double click counts once. Focus after an answer goes to its note; after a failed Allow once it
+// goes back to that same card's Allow once, which waits out the quiet moment like any other.
 import { esc } from "/esc.js";
 import { readAt } from "/activity.js";
 import { peek, post } from "/api.js";
@@ -35,7 +36,17 @@ const perm = {
   holds: {},
   quietUntil: 0,
   pages: [],
-  repaint: (local = true) => perm.pages.forEach((f) => f(local)),
+  drawn: "",
+  repaint: (local = true) => {
+    // A redraw that changes or moves the cards, as when a Deny box closes after loads it held back,
+    // starts the quiet moment too. A load's redraw waits while a Deny box is open.
+    if (local || !permissionFormOpen()) {
+      const now = drawnLayout();
+      if (now !== perm.drawn) perm.quietUntil = Math.max(perm.quietUntil, Date.now() + QUIET_MS);
+      perm.drawn = now;
+    }
+    perm.pages.forEach((f) => f(local));
+  },
 };
 
 /**
@@ -55,24 +66,38 @@ const cardOf = (id) => document.querySelector(`[data-permission="${CSS.escape(id
 
 /**
  * Holds a card that is being answered or was answered elsewhere in its place, at the height it has
- * now, read before any repaint, so the next card never moves up under the pointer; it lets go after
- * HOLD_MS, or, with `later` false, when the caller says (`letGo`).
+ * now, read before any repaint, so the next card never moves up under the pointer; it lets go
+ * HOLD_MS after it first shows answered (`countDown`).
  */
-function hold(id, later = true) {
+function hold(id) {
   const card = cardOf(id);
   if (!card || perm.holds[id]) return;
-  perm.holds[id] = card.getBoundingClientRect().height;
-  if (later) letGo(id);
+  perm.holds[id] = { height: card.getBoundingClientRect().height, token: ++holdSeq, started: false };
 }
+let holdSeq = 0;
 
-/** Lets a held card go HOLD_MS from now: from when it shows answered, not from the press. */
-function letGo(id) {
+/**
+ * Starts a held card's countdown from the first redraw that shows it answered, so a hold that waited
+ * behind an open Deny box, or on a slow answer, still lasts HOLD_MS where it shows. Its token keeps a
+ * timer from letting go a later hold of the same card.
+ */
+function countDown(id) {
+  const h = perm.holds[id];
+  if (!h || h.started) return;
+  h.started = true;
   setTimeout(() => {
+    if (perm.holds[id]?.token !== h.token) return;
     delete perm.holds[id];
     perm.quietUntil = Date.now() + QUIET_MS;
     perm.repaint(false);
   }, HOLD_MS);
 }
+
+/** The cards as a redraw shows them: their order, states and holds. */
+const drawnLayout = () =>
+  prompts()
+    .map((p) => `${p.id}:${p.state}:${p.id in perm.holds}`)
+    .join(",");
 
 /** Loads the prompts; shows them again when they changed. A load that fails keeps what the page has. */
 export async function loadPermissions() {
@@ -95,7 +120,7 @@ export const permissionFormOpen = () => perm.denying !== null;
 export function prompts(session, now = Date.now()) {
   return perm.list
     .filter((p) => (!session || p.session === session) && (p.state === "waiting" || p.id in perm.holds || now - Date.parse(p.settled_at ?? p.at) < SHOWN_MS))
-    .sort((a, b) => a.at.localeCompare(b.at));
+    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
 }
 
 /** Where a settled prompt was answered, with when. */
@@ -216,7 +241,10 @@ export function promptHtml(p, h, from = "") {
   const tool = `<span class="tag-tool">${esc(p.tool)}</span>`;
   const note = `<p class="note perm-answered" tabindex="-1" data-permission-note="${id}">${tool} ${esc(ANSWERED[p.state]?.(p) ?? "")}</p>`;
   if (p.state !== "waiting") {
-    const held = p.id in perm.holds ? ` style="min-height:${perm.holds[p.id]}px"` : "";
+    const h = perm.holds[p.id];
+    // Shown answered: its hold counts down from now.
+    if (h && !h.started) queueMicrotask(() => countDown(p.id));
+    const held = h ? ` style="min-height:${h.height}px"` : "";
     const line = note.replace("<p ", `<p data-permission="${id}" `);
     return held ? `<div class="perm-held"${held}>${line}</div>` : line;
   }
@@ -226,13 +254,16 @@ export function promptHtml(p, h, from = "") {
 /** Puts the focus on a prompt's note once it is answered, never on a button that approves. */
 const focusNote = (id) => document.querySelector(`[data-permission-note="${CSS.escape(id)}"]`)?.focus();
 
+/** Whether a prompt still waits after its answer was sent, as when the post failed. */
+const readyToRetry = (id) => perm.list.some((p) => p.id === id && p.state === "waiting");
+
 /** Puts the focus on a prompt's card while its answer is sent: not on another card's buttons. */
 const focusCard = (id) => cardOf(id)?.focus({ preventScroll: true });
 
 /** Sends an answer; a refusal (as when the terminal answered first) shows under the buttons, and the list loads again. */
 async function answer(id, body) {
-  // Measured before any repaint replaces the card; it lets go once the answer shows.
-  hold(id, false);
+  // Measured before any repaint replaces the card; it counts down once the card shows answered.
+  hold(id);
   perm.busy = id;
   perm.errors[id] = "";
   perm.quietUntil = Date.now() + QUIET_MS;
@@ -253,7 +284,8 @@ async function answer(id, body) {
   perm.quietUntil = Date.now() + QUIET_MS;
   await loadPermissions();
   perm.repaint();
-  if (id in perm.holds) letGo(id);
+  // Still waiting (the answer failed): no hold, so a retry holds afresh.
+  if (readyToRetry(id)) delete perm.holds[id];
   // A prompt still waiting (the post failed) takes the focus back on its own Allow once; else its note.
   const again = document.querySelector(`[data-perm-allow="${CSS.escape(id)}"]`);
   if (!ok && again) again.focus();
