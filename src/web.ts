@@ -1106,8 +1106,10 @@ function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error
 function errorReply(err: unknown): [number, Record<string, unknown>] {
   if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
   if (err instanceof Error && /^(no review|invalid review id) /.test(err.message)) return [404, { error: err.message }];
+  // The stack is read here, not through `field`: a stack read inside a shared getter taints every
+  // value that getter returns, which CodeQL then follows into replies (alert 63).
   const message = err instanceof Error ? err.message : String(err);
-  logFailure(message, field(err, "stack"));
+  logFailure(message, err instanceof Error ? err.stack : undefined);
   return [500, { error: `hoop failed on this request; ${join(hoopHome(), "pages.jsonl")} has the details` }];
 }
 
