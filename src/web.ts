@@ -152,7 +152,8 @@ export function responses(hoop: Hoop, meta: Meta): Record<string, Responded> {
     .sort();
   const receipts = hoop.store.receipts(meta.id);
   const out: Record<string, Responded> = {};
-  const after = (at: string, list: string[]) => list.find((x) => x > at);
+  // A response in the same millisecond as the read still comes after it.
+  const after = (at: string, list: string[]) => list.find((x) => x >= at);
   for (let n = 1; n <= meta.revisions; n++)
     hoop.store.feedback(meta.id, n).forEach((fb, i) => {
       const key = receiptKey(n, i);
