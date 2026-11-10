@@ -208,7 +208,7 @@ Claude 14:06" for a reply. A review that asks Claude to act on nothing (an appro
 closed review or of a file you opened, another session's comment) says only "Read by", and so does a
 quick question's card: neither ever says "No response yet". On Home, the same review's row shows a
 "No response yet" badge (`--info`, a comment icon) while its session is idle or has ended, and not
-while the session works or waits on the review.
+while the session works or waits on the review. A row shows at most one of these: "Not read yet" (or, with messages off, that hoop didn't send it) while unread, else "No response yet".
 
 **Parts turned off.** When hoop's off list turns a part off, the page says so where the part
 would have shown, naming the list, not as an error. With `messages` off, what you send isn't
