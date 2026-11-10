@@ -44,9 +44,17 @@ export const ACTION = {
   withdrawn: { label: "Withdrawn", tone: "muted", icon: "close" },
 };
 
+/** What Home and Work say of a message hoop didn't send, since hoop's off list turns messages into a session off. */
+export const MESSAGES_OFF = "Not sent: messages into a session are off in hoop's off list";
+
+/** What a review or an answer sent with messages into a session off says: it is kept, and Claude reads it when it asks. */
+export const SAVED_OFF = "Saved. Messages into a session are off in hoop's off list, so Claude wasn't told; it reads this with hoop_wait or hoop_feedback.";
+
 /** A review whose latest submitted review the agent hasn't read, while it isn't waiting for one. */
 export const READ = {
   unread: { label: "Not read yet", tone: "info", icon: "clock" },
+  // Unread since messages into a session are off in hoop's off list: nothing told Claude.
+  not_sent: { label: MESSAGES_OFF, tone: "muted", icon: "minus" },
 };
 
 /** A todo's or subagent's state on the Work page, and a session's. */

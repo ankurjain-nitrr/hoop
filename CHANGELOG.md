@@ -8,6 +8,10 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Two more switches in hoop's off list, `~/.hoop/off`: `messages` stops every message into a
+  session (Claude reads what you sent with `hoop_wait` or `hoop_feedback`, and Work's changes wait
+  for the gate), and `mermaid` stops pages loading Mermaid, showing each diagram's source. The pages
+  say so where it applies (#212).
 - Claude Code's permission prompts can be answered from hoop too, once you turn it on in
   `hoop init` (`--permission-prompts`; it adds `permission_prompts` to `~/.hoop/on`). The plugin's
   PermissionRequest hook keeps the prompt for hoop's pages and waits; the terminal still asks, and
@@ -15,6 +19,14 @@ All notable changes to hoop are listed here. The format follows
   follows (#212).
 - A release every two weeks when `main` has changes, and a **Release due** workflow that opens an
   issue on a release Monday when one is due; it publishes nothing (#212).
+
+### Fixed
+
+- A conversation resumed under a new session ID (as `claude --resume` does for a session that was
+  still running) acts as its earlier session once that one has stopped: it replies to the person's
+  comments and added todos on Work, and waits on, reads and withdraws the quick questions it asked
+  before, instead of being refused as another session. A fork running beside its original doesn't
+  (#271).
 
 ## [1.6.0] - 2026-11-08
 

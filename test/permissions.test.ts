@@ -397,3 +397,42 @@ test("hoop init asks before answering permission prompts from hoop's pages, and 
   assert.match(out, /already show on hoop's pages too/);
   assert.equal(hoopCli(["init", "--permission-prompts", "--no-permission-prompts"]).status, 2);
 });
+
+test("regression: Claude Code's question tool and leaving plan mode are never recorded or answered, so the terminal answers them", async () => {
+  // Allow once can't answer them: an allow needs the answer itself (updatedInput), and the plan hook reviews a plan.
+  const home = tempHome();
+  turnOn(home);
+  const question = {
+    ...request(),
+    tool_name: "AskUserQuestion",
+    tool_input: { questions: [{ question: "Which framework?", header: "Framework", options: [{ label: "React" }, { label: "Vue" }], multiSelect: false }] },
+  };
+  const plan = { ...request(), tool_name: "ExitPlanMode", tool_input: { plan: "# Plan\n" } };
+  for (const input of [question, plan]) {
+    assert.throws(() => askPermission(home, input), /hoop doesn't answer (AskUserQuestion|ExitPlanMode): the terminal does/);
+    const w = writer(home);
+    assert.equal(await permissionHook(input, { home, remote: w, waitMs: 1000, pollMs: 20 }), undefined);
+    assert.deepEqual(w.calls, [], "nothing is recorded");
+  }
+  assert.deepEqual(listPermissions(home), []);
+  // The hook script leaves them to the terminal without starting hoop.
+  const log = join(home, "hoop.log");
+  const bin = fakeBin(home, "fake-hoop", `cat >/dev/null\necho "$*" >> "${log}"\necho '{}'`);
+  for (const input of [question, plan]) {
+    const r = spawnSync("sh", [join(scripts, "permission.sh")], {
+      input: JSON.stringify(input),
+      encoding: "utf8",
+      env: { PATH: "/usr/bin:/bin", HOME: home, HOOP_HOME: home, HOOP_BIN: bin },
+    });
+    assert.deepEqual([r.status, r.stdout], [0, ""]);
+  }
+  assert.equal(existsSync(log), false, "no hoop started");
+  // A spaced JSON form is caught too.
+  const spaced = JSON.stringify(question).replace('"tool_name":"AskUserQuestion"', '"tool_name": "AskUserQuestion"');
+  spawnSync("sh", [join(scripts, "permission.sh")], {
+    input: spaced,
+    encoding: "utf8",
+    env: { PATH: "/usr/bin:/bin", HOME: home, HOOP_HOME: home, HOOP_BIN: bin },
+  });
+  assert.equal(existsSync(log), false);
+});
