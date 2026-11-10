@@ -6,5 +6,5 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "paths": { "/*": ["./web/*"] }
   },
-  "include": ["web/links.js", "web/doc-lines.js", "web/place.js", "web/status.js", "web/esc.js", "web/icons.js", "web/frame.js", "web/fold.js", "web/outline.js"]
+  "include": ["web/links.js", "web/doc-lines.js", "web/place.js", "web/status.js", "web/esc.js", "web/icons.js", "web/diagram-frame.js", "web/focus.js", "web/send.js", "web/build-drafts.js", "web/api.js", "web/tips.js", "web/frame.js", "web/fold.js", "web/outline.js"]
 }

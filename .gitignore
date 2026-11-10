@@ -7,6 +7,12 @@ web/place.d.ts
 web/status.d.ts
 web/esc.d.ts
 web/icons.d.ts
+web/diagram-frame.d.ts
+web/focus.d.ts
+web/send.d.ts
+web/build-drafts.d.ts
+web/api.d.ts
+web/tips.d.ts
 web/frame.d.ts
 web/fold.d.ts
 web/outline.d.ts

@@ -4,6 +4,7 @@ import { PAGES_STOPPED, setBanner } from "./frame.js";
 
 const saysStopped = () => document.getElementById("banner")?.textContent === PAGES_STOPPED;
 
+/** @type {Promise<unknown> | undefined} */
 let probing;
 /**
  * Asks whether the pages answer at all, after a request got no answer: the banner says they stopped
@@ -23,6 +24,9 @@ function confirmStopped() {
  * `fetch` for the pages' own API. A request that gets no answer at all throws in plain words instead
  * of the browser's "Failed to fetch", flagged `pagesDown`, with the browser's error as its cause; an
  * abort or any other error keeps its own. A request that gets an answer clears the stopped banner.
+ * @param {string} path
+ * @param {RequestInit} [init]
+ * @returns {Promise<Response>}
  */
 export async function request(path, init = {}) {
   let res;
@@ -44,20 +48,30 @@ export async function request(path, init = {}) {
  * Calls the local API and returns the parsed reply; a reply that isn't JSON throws. A refusal throws
  * the reply's error, or the status text when it has none, with the reply as `body` and its status as
  * `status`.
+ * @param {string} path
+ * @param {RequestInit} [init]
+ * @returns {Promise<unknown>}
  */
 export async function api(path, init = {}) {
   const res = await request(path, init);
   if (res.ok) return res.json();
+  /** @type {{ error?: string }} */
   const body = await res.json().catch(() => ({}));
   throw Object.assign(new Error(body?.error || res.statusText), { body, status: res.status });
 }
 
-/** Sends a JSON POST to the local API and returns the parsed reply; refusals throw as `api`'s do. */
+/**
+ * Sends a JSON POST to the local API and returns the parsed reply; refusals throw as `api`'s do.
+ * @param {string} path
+ * @param {unknown} body
+ */
 export const post = (path, body) => api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 /**
  * Reads the local API for a background poll: the parsed reply, or undefined when it is refused or gets
  * no answer. It leaves the stopped banner alone, so a poll neither raises nor clears it.
+ * @param {string} path
+ * @returns {Promise<unknown>}
  */
 export const peek = (path) =>
   fetch(path)

@@ -12,10 +12,16 @@ export const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 /** The modifier the pages name in their hints and titles: ⌘ on a Mac, else Ctrl. */
 export const MOD = MAC ? "⌘" : "Ctrl";
 
-/** Whether an input method is still composing this key press (Safari reports it only as key code 229). */
+/**
+ * Whether an input method is still composing this key press (Safari reports it only as key code 229).
+ * @param {KeyboardEvent} e
+ */
 export const composing = (e) => e.isComposing || e.keyCode === 229;
 
-/** Whether a key press sends from a box for long text (`long`), else from any other box, where Ctrl+Enter sends too. A held key's repeats match as well: the caller sends on the first press only. */
+/** Whether a key press sends from a box for long text (`long`), else from any other box, where Ctrl+Enter sends too. A held key's repeats match as well: the caller sends on the first press only.
+ * @param {KeyboardEvent} e
+ * @param {boolean} long
+ */
 export function sendKey(e, long) {
   if (e.key !== "Enter" || composing(e) || e.altKey || e.shiftKey) return false;
   return !long || e.metaKey || e.ctrlKey;
@@ -25,6 +31,9 @@ export function sendKey(e, long) {
  * The line under a box for long text, naming the key and what it does: `verb` is "sends", "saves",
  * "adds" or "previews", as its button does. `onEscape` says what Escape does there, or nothing where it
  * does nothing. `tag` is "span" where the box sits inside a paragraph, which can't hold another one.
+ * @param {string} id
+ * @param {string} verb
+ * @param {{ onEscape?: string, tag?: string }} [options]
  */
 export function longHint(id, verb, { onEscape = "Escape cancels.", tag = "p" } = {}) {
   return `<${tag} class="hint" id="${id}">${MOD}+Enter ${verb}${onEscape ? `; ${onEscape}` : "."}</${tag}>`;
@@ -37,7 +46,7 @@ export const KEEP_ON_ESCAPE = "Escape keeps your words for later, Cancel discard
 export const SHORT_HINT = "Enter sends; Shift+Enter starts a new line.";
 
 document.addEventListener("keydown", (e) => {
-  const box = e.target.closest?.("[data-send]");
+  const box = /** @type {HTMLTextAreaElement | null | undefined} */ (/** @type {Element | null} */ (e.target)?.closest?.("[data-send]"));
   if (!box) return;
   const cancel = box.dataset.cancelTo;
   if (e.key === "Escape" && cancel && !composing(e)) {
