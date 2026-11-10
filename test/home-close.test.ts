@@ -1,14 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMarkdown } from "../src/markdown.js";
+import type { Hoop } from "../src/hoop.js";
 import { BROWSER_SKIP, hasFocus, withBrowser } from "./helpers.js";
 
 const doc = (title: string) => parseMarkdown(`# ${title}\n\nWhy it matters.\n`);
+/** A review the person commented on, so it waits on Claude and stays in its session's group under Pending, not in Waiting on you. */
+const commented = (hoop: Hoop, title: string) => {
+  const id = hoop.submit(doc(title)).review_id;
+  hoop.review(id, { verdict: "comment", reviewer: "ana", comments: [{ item: "DOC", line: 1, body: "Shorter?" }] });
+  return id;
+};
 
 test("Close on a Home row: confirm and cancel from the keyboard, the row moves to Completed and the link still opens", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const older = hoop.submit(doc("Cache keys")).review_id;
-    const newer = hoop.submit(doc("Order export")).review_id;
+    const older = commented(hoop, "Cache keys");
+    const newer = commented(hoop, "Order export");
     await page.goto(base);
     const row = (id: string) => page.locator(".list-row", { has: page.locator(`a[href="/r/${id}"]`) });
     await row(newer).locator("[data-close-review]").waitFor({ state: "attached" });
@@ -74,7 +81,7 @@ const refreshEvery = (ms: number) => ((window as unknown as { HOOP_PENDING_MS: n
 
 test("A row's Close takes focus over another open form and keeps its reason through a repaint", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
-    const id = hoop.submit(doc("Order export")).review_id;
+    const id = commented(hoop, "Order export");
     await page.goto(base);
     await page.locator("[data-rename]").first().click();
     await page.locator(".rename input").waitFor();
@@ -129,8 +136,8 @@ test("Closing from Home keeps focus on the next row while the list refreshes, an
 }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     await page.addInitScript(refreshEvery, 100);
-    const older = hoop.submit(doc("Cache keys")).review_id;
-    const newer = hoop.submit(doc("Order export")).review_id;
+    const older = commented(hoop, "Cache keys");
+    const newer = commented(hoop, "Order export");
     let closed = false;
     await page.route("**/api/reviews/*/close", async (route) => {
       closed = true;

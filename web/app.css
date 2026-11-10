@@ -636,6 +636,16 @@ h1 {
   font-size: var(--text-detail);
   color: var(--muted);
 }
+/* Waiting on you: your move, marked as an open action item is. */
+.list .waiting-row {
+  border-left: 3px solid var(--live);
+}
+/* Waiting on you: what kind of thing waits and what it asks, on its own line above the title. */
+.list .waiting-row a.row .kind {
+  flex: 1 1 100%;
+  font-size: var(--text-detail);
+  color: var(--muted);
+}
 /* A review's TL;DR on Home, kept to two lines; its title attribute holds the full text. */
 .list a.row .s {
   flex: 1 1 100%;

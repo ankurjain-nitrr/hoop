@@ -369,7 +369,7 @@ test("Home shows open pull requests under Pending and merged ones under Complete
       // A pull request whose repository was deleted leaves Pending as Gone (#183).
       assert.deepEqual(await completed.locator(`a.pr[href="${urls[3]}"] .badge`).allInnerTexts(), ["Gone"]);
       assert.equal(await pending.locator(`a.pr[href="${urls[3]}"]`).count(), 0);
-      assert.equal(await pending.locator(".count").innerText(), "3", "the review and two pull requests");
+      assert.equal(await pending.locator(".count").innerText(), "2", "two pull requests: the review awaiting your verdict is in Waiting on you");
     },
     hoop,
     { gh },
