@@ -8,6 +8,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Home's **Waiting on you** lists everything Claude waits on you for, oldest first, each with what
+  it asks, how long it has waited and its session: reviews awaiting your verdict ("Review · Approve
+  or request changes"), unanswered quick questions ("Question · Answer"), builds with a section to
+  write ("Build section · Write or generate"), permission prompts and dialogs from Work ("Work ·
+  Answer the prompt") and open action items. What it lists leaves its session's group below (#271).
 - Claude Code's permission prompts can be answered from hoop too, once you turn it on in
   `hoop init` (`--permission-prompts`; it adds `permission_prompts` to `~/.hoop/on`). The plugin's
   PermissionRequest hook keeps the prompt for hoop's pages and waits; the terminal still asks, and

@@ -20,7 +20,7 @@ import { editWork, KEEPS, removeWork, hasWork } from "./work.js";
 import { DISMISSED_MAX, linkTodos, workView } from "./work-view.js";
 import { claudeSessions, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { joinBlocks, requeue } from "./build.js";
-import type { DraftSeen } from "./build-drafts.js";
+import { type DraftSeen, emptySections } from "./build-drafts.js";
 import { Steer } from "./steer.js";
 import type { Sender } from "./deliver.js";
 import { recordStates } from "./history.js";
@@ -150,13 +150,31 @@ function askCounts(hoop: Hoop, meta: Meta) {
 }
 
 /** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
+/**
+ * What a review waits on the person for, for Home's Waiting on you, and since when: a verdict on its
+ * latest revision, an answer to a quick question, or a build's empty section to write or generate
+ * (one with nothing under it, no request open to Claude and no draft waiting). Undefined otherwise.
+ */
+export function waitsOnYou(hoop: Hoop, meta: Meta, status: string): { kind: "review" | "question" | "build"; since: string } | undefined {
+  if (meta.superseded_by) return undefined;
+  if (status === "question") return { kind: "question", since: meta.created };
+  if (status === "awaiting_review" && !meta.ask) return { kind: "review", since: hoop.store.revisionAt(meta.id) ?? meta.updated };
+  if (status !== "building") return undefined;
+  const build = hoop.builds.read(meta.id);
+  const asked = (build.requests ?? []).some((r) => r.status !== "written");
+  return !asked && emptySections(build).length ? { kind: "build", since: meta.updated } : undefined;
+}
+
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
   const session = sessionOf(hoop, meta, live, sessions);
+  const status = reviewStatus(hoop.store, meta);
+  const waits = waitsOnYou(hoop, meta, status.status_key);
   return {
-    ...reviewStatus(hoop.store, meta),
+    ...status,
     ...(session ? { session } : {}),
     place: placeOf(meta),
     unread: unread(hoop, meta),
+    ...(waits ? { waits_on_you: waits } : {}),
     ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),
   };
 }

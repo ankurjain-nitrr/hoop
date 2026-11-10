@@ -662,6 +662,8 @@ const home = {
   update: undefined,
   // Your response times, per kind, from /api/loop-time (src/loop-time.ts).
   loop: [],
+  // The Work page's sessions, for the prompts that wait on you in Waiting on you.
+  work: [],
   renaming: null,
   error: "",
   // Why Open a sample review didn't open, under the button until the next press.
@@ -750,16 +752,66 @@ function actionHtml(a, h) {
 /** The error line under an action item's buttons, while its Done was refused. */
 const doneErrorHtml = (id) => (home.doneError?.id === id ? `<p class="rename-error" role="alert">${esc(home.doneError.error)}</p>` : "");
 
-/** Home's first section: the open action items, newest first. */
+/** What each kind of row in Waiting on you is, and what it asks of you. */
+const WAITS = {
+  review: "Review · Approve or request changes",
+  question: "Question · Answer",
+  build: "Build section · Write or generate",
+  work: "Work · Answer the prompt",
+};
+
+/** What a Work session's step waits on that only you can answer: a permission prompt or another dialog. */
+const PROMPTS = new Set(["permission", "dialog"]);
+
+/** The Work page's sessions and subagents whose current step waits on a prompt, as Waiting on you rows. */
+function workWaits(sessions) {
+  return sessions.flatMap((s) => {
+    const name = s.name ?? "Unnamed session";
+    const href = `/work#${`session-${s.id}-`.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+    const steps = [s.doing, ...(s.agents ?? []).map((a) => a.doing)].filter((d) => d && PROMPTS.has(d.waiting));
+    return steps.map((d) => ({ kind: "work", title: d.what, href, since: d.at, session: name }));
+  });
+}
+
+/** A review's session as Waiting on you names it: its name, "Opened by you" for a file you opened, or none. */
+function sessionName(m) {
+  if (m.session) return m.session.name ?? "Unnamed session";
+  return m.opened_by ? OPENED_BY_YOU : "";
+}
+
+/**
+ * Everything Claude waits on you for, oldest first: reviews awaiting your verdict, unanswered quick
+ * questions, builds with a section to write or generate, Work prompts, and open action items.
+ */
+function waitingItems() {
+  const reviews = home.list
+    .filter((m) => m.waits_on_you)
+    .map((m) => ({ kind: m.waits_on_you.kind, title: m.title, href: reviewPath(m.id), since: m.waits_on_you.since, session: sessionName(m), review: m }));
+  const actions = home.actions.filter((a) => a.state === "open").map((a) => ({ kind: "action", since: a.created, action: a }));
+  return [...reviews, ...workWaits(home.work), ...actions].sort((a, b) => String(a.since).localeCompare(String(b.since)));
+}
+
+/** One row of Waiting on you: an action item as on Home, or the kind and what it asks, the title as a link, its age and its session. */
+function waitingRowHtml(w, now) {
+  if (w.action) return actionHtml(w.action, 3);
+  const age = w.since ? `${span(Math.max(0, now - Date.parse(w.since)))} ago` : "";
+  const meta = [age, w.session].filter(Boolean).map(esc).join(" · ");
+  const title = w.review ? titleHtml(w.title) : esc(w.title);
+  const sample = w.review?.sample ? '<span class="tag-sample">Sample</span>' : "";
+  return `<div class="list-row waiting-row"><a class="row" href="${esc(w.href)}"><span class="kind">${esc(WAITS[w.kind])}</span><span class="t fmt">${title}</span>${sample}${meta ? `<span class="m">${meta}</span>` : ""}</a>${w.review ? rowCloseHtml(w.review) : ""}</div>`;
+}
+
+/** Home's first section: everything Claude waits on you for, oldest first, each with what it asks, its age and its session. */
 function waitingHtml() {
-  const open = home.actions.filter((a) => a.state === "open");
+  const items = waitingItems();
   const undo = undoneHtml();
-  if (!open.length && !undo) return "";
+  if (!items.length && !undo) return "";
   // Holding only the Undo line after Done on its last item: its name, with no count and no fold.
-  if (!open.length)
+  if (!items.length)
     return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${undo}</div></section>`;
   const key = "home:waiting";
-  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", foldCount("Waiting on you", open.length))}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${open.map((a) => actionHtml(a, 3)).join("")}</div></section>`;
+  const now = Date.now();
+  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", foldCount("Waiting on you", items.length))}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${items.map((w) => waitingRowHtml(w, now)).join("")}</div></section>`;
 }
 
 /** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
@@ -805,11 +857,12 @@ function listHtml() {
   const start = !prs.length && !home.actions.length && list.every(finishedSample);
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
-  const clear = !home.actions.some((a) => a.state === "open") && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
+  const clear = !waitingItems().length && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
     topHtml(start, clear) +
     SECTIONS.map(([key, label]) => {
-      const rows = list.filter((m) => sectionOf(m) === key);
+      // What waits on you shows in Waiting on you, and leaves its session's group here.
+      const rows = list.filter((m) => sectionOf(m) === key && !m.waits_on_you);
       const prRows = prs.filter((p) => prSection(p) === key).map(prRow);
       // Closed action items fold into Completed, in a group of their own.
       const done = key === "completed" ? closed : [];
@@ -947,6 +1000,19 @@ async function renderList() {
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
   setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
+  // The Work prompts that wait on you, asked again every 15 seconds while Home is open, as the notifier does.
+  loadWork();
+  setInterval(loadWork, window.HOOP_WORK_ALERT_MS ?? 15_000);
+}
+
+/** Loads the Work page's sessions for Waiting on you, and shows them when the prompts waiting changed. */
+async function loadWork() {
+  if (document.visibilityState === "hidden" && home.work.length) return;
+  const work = await api("/api/work").catch(() => undefined);
+  if (!Array.isArray(work?.sessions)) return;
+  const before = JSON.stringify(workWaits(home.work));
+  home.work = work.sessions;
+  if (JSON.stringify(workWaits(home.work)) !== before) repaintList();
 }
 
 async function loadPrs() {

@@ -686,6 +686,15 @@ leaves that line out, since it still says what the agent did before; it asks aga
 receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs. A
 review on a review a person opened from a file asks no session to act (`asksClaudeToAct`), so it is
 never marked.
+
+Home's **Waiting on you** lists, oldest first, each review whose `waits_on_you` (`waitsOnYou` in
+`src/web.ts`, on every `/api/reviews` row) says it waits on the person: a revision awaiting a
+verdict (since the revision was written), a quick question still open (since it was asked), or a
+build with an empty section (`emptySections`) and no request open to Claude (since it last
+changed). It adds each Work session or subagent whose current step waits on a permission prompt or
+dialog, from `/api/work`, which Home asks every 15 seconds while it is open, and the open action
+items (since they were added). A review listed there leaves its session's group under Pending. The
+tab's count stays reviews awaiting a verdict, open questions and open action items.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
 awaiting review and not superseded into the title and the favicon, and refreshes Home's list when it
 changed. A review or revision that starts waiting while the tab is hidden shows a notification, once

@@ -10,7 +10,7 @@ import { readWork, type TodoLink, workHook } from "../src/work.js";
 import { workView, type WorkSession } from "../src/work-view.js";
 import type { ClaudeSession } from "../src/claude-sessions.js";
 import { ALERT_FORGET_MS, newAlerts, workAlerts } from "../web/pending.js";
-import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
+import { BROWSER_SKIP, example, tempHome, withBrowser } from "./helpers.js";
 
 const HOOKS = JSON.parse(readFileSync(new URL("./fixtures/work-hooks.json", import.meta.url), "utf8"));
 const SESSION = "11111111-2222-3333-4444-555555555555";
@@ -82,7 +82,7 @@ test("an alert that flickers away and back within a minute notifies once; one go
 });
 
 test("a todo or subagent that comes to wait on the person or stalls notifies once, only while notifications are on", { skip: BROWSER_SKIP }, () =>
-  withBrowser(async ({ base, page }) => {
+  withBrowser(async ({ hoop, base, page }) => {
     await page.addInitScript(`
       Object.assign(window, { shown: [], HOOP_WORK_ALERT_MS: 100 });
       function Stub(title, opts) { shown.push({ title, tag: opts.tag, body: opts.body }); this.close = () => {}; }
@@ -116,12 +116,13 @@ test("a todo or subagent that comes to wait on the person or stalls notifies onc
       { title: "Waiting on you: Write the plan", tag: `${SESSION}:todo:1:waiting`, body: "Order export · Waiting on you: PR #12 needs your review" },
     ]);
 
-    // Off, the Work page isn't asked at all.
+    // Off, the Work page isn't asked at all, on a page other than Home: Home asks it for the prompts
+    // its Waiting on you lists.
     await page.evaluate(() => {
       sessionStorage.setItem("off", "1");
       localStorage.setItem("hoop:notify", "off");
     });
-    await page.reload();
+    await page.goto(`${base}/r/${hoop.submit(example()).review_id}`);
     await page.waitForTimeout(300);
     const before = asked;
     await page.waitForTimeout(400);

@@ -5,9 +5,19 @@ on this machine. Run `hoop` with no command to open it in the browser and print 
 
 ## Waiting on you
 
-At the top, **Waiting on you** lists what Claude needs you to do that isn't a review, such as
-merging a pull request, publishing a staged release or running a command. Each item says what to do
-and why, links to what it's about, and names its session.
+At the top, **Waiting on you** lists everything Claude waits on you for, across every session, oldest
+first. Each row says what kind of thing it is and what it asks, links to it, and shows how long it
+has waited and its session:
+
+- **Review · Approve or request changes**: a revision you haven't reviewed yet.
+- **Question · Answer**: a quick question with a question unanswered.
+- **Build section · Write or generate**: a build with an empty section, and nothing asked of Claude.
+- **Work · Answer the prompt**: a permission prompt or dialog in Claude Code, from Work.
+- An action item: something Claude needs you to do that isn't a review, such as merging a pull
+  request, publishing a staged release or running a command. It says what to do and why, links to
+  what it's about, and names its session.
+
+What shows here leaves its session's group under Pending. For action items:
 
 - An item closes when hoop sees it done (the pull request merged, the review approved or the version
   published), checked while Home is open, at most once a minute each.

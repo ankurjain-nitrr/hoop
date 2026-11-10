@@ -389,7 +389,8 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
   skip: BROWSER_SKIP,
 }, async () => {
   const hoop = new Hoop(new Store(tempHome()), TEST_SESSION);
-  hoop.submit(example());
+  // A review the person commented on waits on Claude: it stays under Pending, out of Waiting on you and the tab's count.
+  hoop.review(hoop.submit(example()).review_id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
   const csv = addItem(hoop, "Merge the CSV export pull request", { kind: "pr_merged", url: PR });
   const manual = addItem(hoop, "Run the database migration", { kind: "manual" });
   const merged = addItem(hoop, "Merge the docs pull request", { kind: "pr_merged", url: "https://github.com/acme/shop/pull/7" });
@@ -407,7 +408,7 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       await completed.locator(`[data-action="${merged.id}"]`).waitFor();
       assert.match(await completed.locator(`[data-action="${merged.id}"] .m`).innerText(), /hoop saw it done/);
       assert.equal(await waiting.locator(".count").innerText(), "2");
-      assert.match(await page.title(), /^\(3\) /, "the tab counts the review and the two open items");
+      assert.match(await page.title(), /^\(2\) /, "the tab counts the two open items");
       const pr = waiting.locator(`[data-action="${csv.id}"]`);
       assert.equal(await pr.locator("h3").innerText(), "Merge the CSV export pull request");
       assert.equal(await pr.locator(".d").innerText(), "The CSV export is reviewed and green.\nMerging it lets the release go out.");
@@ -439,7 +440,7 @@ test("Home shows open items under Waiting on you, with Done on manual ones and W
       assert.match(await completed.locator(`[data-action="${manual.id}"] .m`).innerText(), /marked done/);
       assert.equal(await waiting.locator("[data-action]").count(), 0, "nothing waits");
       assert.equal(sent.at(-1), "Done: Run the database migration");
-      await page.waitForFunction(() => document.title.startsWith("(1) "));
+      await page.waitForFunction(() => !document.title.startsWith("("));
 
       // Right after Done, Undo opens it again, where it was, and the session is told.
       const undo = waiting.getByRole("button", { name: "Undo: open “Run the database migration” again" });
