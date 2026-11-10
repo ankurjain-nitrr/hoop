@@ -9,6 +9,11 @@
 # decides. It never decides by itself.
 input=$(cat)
 grep -qxE "[[:space:]]*permission_prompts[[:space:]]*" "${HOOP_HOME:-$HOME/.hoop}/on" 2>/dev/null || exit 0
+# Claude Code's question tool and leaving plan mode need the answer itself, which Allow once doesn't
+# give (the plan hook reviews a plan): the terminal answers them, as without hoop.
+case "$input" in
+  *'"tool_name":"AskUserQuestion"'* | *'"tool_name": "AskUserQuestion"'* | *'"tool_name":"ExitPlanMode"'* | *'"tool_name": "ExitPlanMode"'*) exit 0 ;;
+esac
 
 . "$(dirname "$0")/hoop.sh"
 [ -n "$HOOP" ] || exit 0

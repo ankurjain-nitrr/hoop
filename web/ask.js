@@ -219,6 +219,8 @@ const DELIVERED = {
   no_session: "Saved. No live Claude session took it; it reads it when it resumes.",
   other_home: "Saved. This hoop isn't the one Claude's session uses, so Claude wasn't told.",
   failed: "Saved, but Claude's session couldn't be reached.",
+  // The answer's receipt says it wasn't sent, so the message doesn't say it again.
+  off: "Saved.",
 };
 
 /**

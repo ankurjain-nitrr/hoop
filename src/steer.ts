@@ -10,6 +10,7 @@ import { moveOrder, sameSubject, settle, addedTodo } from "./work-settle.js";
 import { isOpen, moveInQueue, parkedTodo, startsAfter, waitsFor } from "./work-queue.js";
 import { actsAs, claudeSessions, processOf, type SessionReader } from "./claude-sessions.js";
 import { newId } from "./ids.js";
+import { isOff } from "./off.js";
 
 // People steer a session's own todo list and subagents from the Work page. Each change reaches the
 // agent two ways: in one message over the session's messaging socket, a few seconds after the last
@@ -387,6 +388,8 @@ export class Steer {
    * session that keeps its work in another home never reads these changes, so nothing is sent to it.
    */
   socket(session: string): string | undefined {
+    // With messages off in hoop's off list, no session takes them: changes wait for the gate.
+    if (isOff(this.home, "messages")) return undefined;
     try {
       const to = channel(
         this.home,
@@ -605,7 +608,8 @@ export function replyToComment(
   const found = own?.changes?.some((c) => c.id === id) ? own : workRecords(home).find((r) => r.changes?.some((c) => c.id === id));
   if (!found) throw new HoopError(`no comment ${id} in this session's work`);
   const theirs = found.changes!.find((c) => c.id === id)!;
-  const tookOver = Boolean(theirs.process) && actsAs({ session: found.session, process: theirs.process }, session, opts.sessions);
+  // The session it took over after `/clear` (the same process), or one resumed from it (`claude --resume`).
+  const tookOver = actsAs({ session: found.session, ...(theirs.process ? { process: theirs.process } : {}) }, session, opts.sessions);
   if (found.session !== session && !tookOver) throw new HoopError(`${id} is in another session's work: only the session it was made in replies to it`);
   const at = opts.now ?? new Date().toISOString();
   const reply = editWork(home, found.session, (r) => {
