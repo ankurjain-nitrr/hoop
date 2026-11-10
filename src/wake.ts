@@ -6,6 +6,7 @@ import { channel, type Sender, sendText, sharesHome } from "./deliver.js";
 import { isWaiting, waitRuns } from "./wait.js";
 import { type ClaudeSession, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { count } from "./util.js";
+import { isOff } from "./off.js";
 
 // A person's review reaches the session that asked for it even after the agent stopped waiting: the
 // pages process sends the session one message over its messaging socket, and the review page shows
@@ -42,7 +43,8 @@ export function agentState(store: Store, meta: ReviewMeta, sessions: SessionRead
   if (!live) return { state: "ended", session: meta.owner.session };
   const state = live.status === "idle" ? "idle" : "busy";
   if (!sharesHome(store.home, live, meta.owner.session)) return { state, session: live.session, wakes: false, elsewhere: true };
-  return { state, session: live.session, wakes: Boolean(live.socket) };
+  // With messages off in hoop's off list, nothing wakes it.
+  return { state, session: live.session, wakes: Boolean(live.socket) && !isOff(store.home, "messages") };
 }
 
 /**
@@ -147,6 +149,7 @@ type SendOpts = { sessions: SessionReader; send?: Sender; now?: () => string };
  */
 async function sendLive(home: string, owner: Owner, opts: SendOpts, text: (live: ClaudeSession) => string): Promise<Delivery> {
   const at = () => opts.now?.() ?? new Date().toISOString();
+  if (isOff(home, "messages")) return { outcome: "off", at: at() };
   const live = liveSession(owner, opts.sessions);
   const to = channel(home, live, owner.session);
   if ("none" in to) return { outcome: to.none, at: at() };

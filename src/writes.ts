@@ -16,6 +16,8 @@ import { isReviewId, reviewOfChild } from "./ids.js";
 import { isList, obj } from "./util.js";
 import { hookFields } from "./hook-input.js";
 import { askPermission, permissionsGate, settlePermission } from "./permissions.js";
+import { recordResume, resumedFrom } from "./resumes.js";
+import { claudeSessions } from "./claude-sessions.js";
 
 // The pages process is the only process that writes hoop's files. Sessions and commands send it
 // their writes at POST /api/write/<action>; these are the actions, run in the pages process.
@@ -91,11 +93,18 @@ type WriteContext = { done?: () => DoneLook };
 
 type Write = { key: (body: Body) => string; run: (store: Store, body: Body, ctx?: WriteContext) => unknown };
 
+/** The queue an agent operation's write waits in: pull requests, action items, or its review's (a new review's own). */
+function opKey(b: Body): string {
+  if (b.name === "track_pr") return "prs";
+  if (b.name === "action" || b.name === "action_withdraw") return ACTIONS_KEY;
+  return reviewKey(obj(b.input)) ?? "new";
+}
+
 /** Each write a session or command can send. Every one validates what it was sent. */
 export const WRITES: Record<string, Write> = {
   /** An agent operation that writes (`writes` in `OPS`), run for the caller's session and place. */
   op: {
-    key: (b) => (b.name === "track_pr" ? "prs" : b.name === "action" || b.name === "action_withdraw" ? ACTIONS_KEY : (reviewKey(obj(b.input)) ?? "new")),
+    key: (b) => opKey(b),
     run: (store, b) => {
       const op = OPS.find((o) => o.name === b.name && o.writes);
       if (!op) throw new HoopError(`no operation ${String(b.name)} to run in the pages process`);
@@ -198,6 +207,18 @@ export const WRITES: Record<string, Write> = {
     run: (store, b) => {
       stampHook(store.home, b.input, undefined, b.plugin);
       return { saved: Boolean(saveSnapshot(store, b.input)) };
+    },
+  },
+  /** A resumed session's link to the session it continues, from its SessionStart hook's input (src/resumes.ts). */
+  resume: {
+    key: () => "resumes",
+    run: (store, b) => {
+      const session = hookFields(b.input).session;
+      const earlier = resumedFrom(b.input);
+      if (!session || !earlier) return { linked: false };
+      // A fork, or a second resume of a session that still runs: the copy never acts as its original.
+      if (claudeSessions().some((s) => s.session === earlier)) return { linked: false, earlier, running: true };
+      return { linked: recordResume(store.home, session, earlier), earlier };
     },
   },
   /** The pull request a `gh pr create` opened, for the hook's session, and the hook's stamp (written at once, so no queue is needed). */
