@@ -1,7 +1,9 @@
 // Runs inside a diagram's sandboxed frame: draws the source the page sends with the library's
 // strict security level, and tells the page the drawing's height or why it failed.
 (() => {
-  const lib = globalThis.mermaid;
+  /** @type {{ initialize(options: object): void, render(id: string, source: string): Promise<{ svg: string }> } | undefined} */
+  const lib = Reflect.get(globalThis, "mermaid");
+  /** @param {object} msg */
   const say = (msg) => parent.postMessage(msg, "*");
   addEventListener("message", async (e) => {
     if (e.source !== parent || e.data?.type !== "draw") return;
@@ -15,7 +17,7 @@
       const box = document.body.firstElementChild?.getBoundingClientRect();
       say({ type: "drawn", id, height: Math.ceil(box?.height ?? document.body.scrollHeight) });
     } catch (err) {
-      say({ type: "error", id, message: err?.message ?? String(err) });
+      say({ type: "error", id, message: /** @type {{ message?: string } | undefined} */ (err)?.message ?? String(err) });
     }
   });
   say({ type: "ready" });

@@ -5,6 +5,7 @@
 import { esc } from "./esc.js";
 
 /** The refinements Generate again offers, each one press, with the text on its button. */
+/** @type {[string, string][]} */
 const REFINES = [
   ["shorter", "Shorter"],
   ["longer", "Longer"],
@@ -15,6 +16,12 @@ const REFINES = [
 /**
  * Claude's draft for the section headed by `block`, marked as a draft: what saving it does, the text
  * as it would read (`render`), the documents Claude drew it from (`sources`), Discard and Save.
+ * @template B
+ * @param {{ kind?: string, blocks: B[] }} draft
+ * @param {{ id: string }} block
+ * @param {string} name
+ * @param {(block: B) => string} render
+ * @param {string} sources
  */
 export function draftHtml(draft, block, name, render, sources) {
   const id = esc(block.id);
@@ -31,6 +38,9 @@ export function draftHtml(draft, block, name, render, sources) {
  * The refinement buttons in a Generate again form (`form` names it: "regen" on a block, "gen" on a
  * heading), each sending one request with its instruction at once, with the note typed above it.
  * The caption says so.
+ * @param {string} id
+ * @param {string} name
+ * @param {"regen" | "gen"} form
  */
 export function refineButtons(id, name, form) {
   const cap = `brk-${form}-${esc(id)}`;
@@ -41,7 +51,11 @@ export function refineButtons(id, name, form) {
   return `<div class="brefine-wrap"><p class="brefine-k" id="${cap}">Or ask for one of these now; your note goes with it:</p><div class="brefine" role="group" aria-labelledby="${cap}">${buttons}</div></div>`;
 }
 
-/** The question Finish asks while Claude's drafts are unsaved: finish without them, or Cancel; then Finish's error line. */
+/**
+ * The question Finish asks while Claude's drafts are unsaved: finish without them, or Cancel; then Finish's error line.
+ * @param {number} count
+ * @param {string} error
+ */
 export function finishConfirm(count, error) {
   const drafts = count === 1 ? "a draft" : `${count} drafts`;
   return `<div class="bconfirm" role="group" aria-labelledby="finishAsk">
