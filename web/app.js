@@ -813,7 +813,7 @@ function waitingItems() {
     .filter((m) => m.waits_on_you)
     .map((m) => ({ kind: m.waits_on_you.kind, title: m.title, href: reviewPath(m.id), since: m.waits_on_you.since, session: sessionName(m), review: m }));
   const actions = home.actions.filter((a) => a.state === "open").map((a) => ({ kind: "action", since: a.created, action: a }));
-  return [...reviews, ...workWaits(home.work), ...actions].sort((a, b) => String(a.since).localeCompare(String(b.since)));
+  return [...reviews, ...workWaits(home.work), ...actions].sort((a, b) => (Date.parse(a.since) || 0) - (Date.parse(b.since) || 0));
 }
 
 /** One row of Waiting on you: an action item as on Home, or the kind and what it asks, the title as a link, its age and its session. */
