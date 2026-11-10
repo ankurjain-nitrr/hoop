@@ -208,12 +208,9 @@ function askCounts(hoop: Hoop, meta: Meta) {
  */
 export function noResponse(hoop: Hoop, meta: Meta, sessions: SessionReader = claudeSessions): boolean {
   if (meta.ask) return false;
-  let key: string | undefined;
-  for (let n = meta.revisions; n > 0 && !key; n--) {
-    const count = hoop.store.feedback(meta.id, n).length;
-    if (count) key = receiptKey(n, count - 1);
-  }
-  if (!key || responses(hoop, meta)[key]?.kind !== "none") return false;
+  const key = latestKey(hoop, meta);
+  // Unread wins: a read by a session other than the owner's leaves the review unread for its owner.
+  if (!key || unread(hoop, meta) || responses(hoop, meta)[key]?.kind !== "none") return false;
   const state = agentState(hoop.store, meta, sessions)?.state;
   return state === "idle" || state === "ended";
 }
