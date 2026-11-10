@@ -208,7 +208,25 @@ questions unanswered", "2 answers, nothing open").
 
 **Receipts.** How far something sent got reads as a short status with its time, never a sentence:
 "Sent to Claude 14:01", then "Read by Claude 14:02" (or "Read by" the session's name), "Answered by
-Claude 14:03". Not "Claude read this at 14:02".
+Claude 14:03". Not "Claude read this at 14:02". On a review's page, a review that asks Claude to act
+reads "Read by Claude 14:02 · No response yet" until Claude responds after reading it, then what it
+did: "Revised by Claude 14:10" for a revision of its own (not a reviewer's Apply), else "Answered by
+Claude 14:06" for a reply. A review that asks Claude to act on nothing (an approval, any review of a
+closed review or of a file you opened, another session's comment) says only "Read by", and so does a
+quick question's card: neither ever says "No response yet".
+
+**Parts turned off.** When hoop's off list turns a part off, the page says so where the part
+would have shown, naming the list, not as an error. With `messages` off, what you send isn't
+told to Claude. Every receipt and status keeps the short form, "Not sent: messages into a session
+are off in hoop's off list": a review's receipt on its page, the Not read yet badge's place on
+Home's review and quick-question cards (a muted badge), a closed action item's line, a quick
+question's answer, Work's change and its session's gate note. The one sentence that says what
+happens next goes in the review page's submit toast, after "Review submitted: Approved.": "Messages
+into a session are off in hoop's off list, so Claude wasn't told; it reads this with hoop_wait or
+hoop_feedback." (the decided "Saved. …" without its "Saved", which the toast already says). A
+quick question's page message says only "Saved.", since its answer's receipt says the rest. With
+`mermaid` off, a diagram shows its source under the muted note "Diagrams are off in hoop's off
+list, so this shows its source." (decided in rv_mw7v3t9e01fc83).
 
 **hoop's terms.** Words hoop uses for its own parts, the same on every page:
 

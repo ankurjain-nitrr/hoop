@@ -1498,6 +1498,12 @@ h1 .anchor {
   border: 0;
   display: block;
 }
+/* Diagrams off in hoop's off list: a muted note over the diagram's source. */
+.diagram-off {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-detail);
+}
 .diagram-frame.drawing {
   position: absolute;
   top: 0;

@@ -80,6 +80,7 @@ be cut short and run again; until it runs, sessions and commands read the review
   sessions/                one entry per running `hoop mcp` session, with its Claude Code session
   plans/<session>.json     the plan hook's review for each Claude Code session
   prs.json                 tracked pull requests: URL, the session that opened it, when
+  resumes.json             each session resumed under a new ID, with the session it continues
   work/<session>.json      a Claude Code session's todos and subagents, from the plugin's hooks
   compact/<session>.json   the reviews and asks open for a session before its latest compaction
   waits/<review>.<pid>.json  a wait on a review that runs, or just timed out
@@ -676,7 +677,12 @@ requests and action items go the same way (`sendLive`), and so do the Work page'
 (`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
 The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
-`waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
+`waiting` as "Sent to Claude <time>". Once read, the view's `responses` (by receipt key, also
+returned by the receipts poll) say what Claude did after it read a review that asks it to act and
+isn't a session's own comment: its first revision after the read that no reviewer's Apply made
+("Revised by Claude <time>"), else its first reply after the read ("Answered by Claude <time>"),
+else `none` ("Read by Claude <time> · No response yet"). Any other review has no entry and reads
+only "Read by". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
 agent's own replies and comments are never sent. The review page's header says what the owner's
 session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
@@ -717,7 +723,7 @@ that changed.
 
 A Claude Code session's ID changes while its process runs: `/clear` rewrites
 `sessions/<pid>.json` with a new `sessionId`, and `pid`, `procStart` and `startedAt` stay
-(`/compact` and `claude --resume` keep the ID). So a review's or action item's owner record keeps
+(`/compact` and, usually, `claude --resume` keep the ID). So a review's or action item's owner record keeps
 the process it was made in (`owner.process`: `pid` and `procStart`, read from that file in the
 pages process), and the session running in that process now acts as the owner (`actsAs` in
 `src/claude-sessions.ts`). The caller's process is looked up in the session files, never taken from the
@@ -731,6 +737,20 @@ file counts only while its process started when `procStart` says (checked with `
 30 seconds), so a file a killed process left behind doesn't match a reused process ID. A known gap:
 `/resume <other>` inside a running process also changes its ID, and hoop then follows the process
 into that other conversation.
+
+`claude --resume` usually keeps the session ID. Resuming a conversation whose session still runs,
+or forking one, goes on under a new session ID in a new process, so neither links it to its earlier
+work. Its SessionStart hook (source `resume`) names the transcript it goes on from, which must lie
+in Claude Code's `projects` folder: the last other `sessionId` in the transcript's last 256 KB (the
+latest session in a chain of resumes, since each one's entries follow the one before), or else the
+session the transcript is named after, is the earlier session (`resumedFrom` in `src/resumes.ts`).
+`hoop session-start` sends the input to the pages process (the `resume` write) and waits at most 2
+seconds, never starting one, as the other hooks don't; with no pages process there is no link and
+the note still prints. The pages process records new → earlier in `<hoop home>/resumes.json` only
+when the earlier session no longer runs (no live session file names it), so a fork running beside
+its original never acts as it, and refuses a link that would loop. `actsAs` then lets a session act
+as any session it was resumed from, through a chain of resumes, for reviews, quick questions, action
+items and the person's comments and added todos on Work, as after `/clear`.
 
 Unsent drafts (comments, suggestions, answers, resolutions, the overall comment and words in an open
 comment box) live in `localStorage` under `hoop:<id>:drafts`, with the revision they were written on
@@ -986,8 +1006,14 @@ comment turns a switch off; odd spacing leaves it on). Each script checks its sw
 `hoop.sh`: a hook that is off exits 0 with no output, so Claude Code goes on as without it, and
 never starts hoop or Node.js. A file rather than environment variables, since a hook gets Claude
 Code's environment and the pages process the environment of whichever session started it; one
-file reaches every session and process alike, and the pages process can read it the same way
-(`test/off-switches.test.ts`).
+file reaches every session and process alike, and the pages process reads it the same way
+(`src/off.ts`, `test/off-switches.test.ts`). Two switches act in the pages process: with
+`messages` off, every message into a session (a review, a close, a build request, an action
+item's close) records the delivery `off` and sends nothing, and Steer treats every session as
+unreachable, so Work changes wait for the gate; `/api/work` carries `messages_off` so Work says
+why. With `mermaid` off, `/api/info` carries `diagrams_off`; `mountDiagrams` asks for it before
+making any frame, and shows each diagram's source under a muted note, which isn't a diagram error,
+so nothing tells Claude of it.
 
 | Hook (matcher) | Script: what it records or enforces | Sync, timeout | When it fails, times out, or hoop isn't running | What the person sees |
 |---|---|---|---|---|

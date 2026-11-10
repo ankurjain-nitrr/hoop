@@ -1,17 +1,19 @@
 // The debt check: counts runtime import cycles (dependency-cruiser), unused code (knip), complex
-// code (Biome's complexity rules), loose typing in src (type-coverage), duplicated code (jscpd) and
-// comments that hide code from those tools, here and at a base commit, and exits 1 when a count is
+// code (Biome's complexity rules), loose typing in src (type-coverage), duplicated code (jscpd;
+// test/ apart, from fewer tokens), comments that hide code from those tools, and patterns used
+// outside their owner (scripts/banned.ts), here and at a base commit, and exits 1 when a count is
 // higher here. The base is measured in a temporary worktree, so there is no baseline file to keep
 // up to date, and debt paid off anywhere lowers the bar for everyone. `--base` defaults to where
 // this branch left origin/main; CI passes HEAD^1, the base branch for a pull request's merge commit
 // and the previous commit on main.
 // Usage: tsx scripts/debt.ts [--base <ref>]
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { bannedCounts } from "./banned.js";
 
 export type Counts = Record<string, number>;
 
@@ -89,8 +91,8 @@ export function typeCounts(types: any): Counts {
 }
 
 /** Duplicated lines, from jscpd's JSON report. */
-export function jscpdCounts(report: any): Counts {
-  return { duplicatedLines: report.statistics.total.duplicatedLines };
+export function jscpdCounts(report: any, name = "duplicatedLines"): Counts {
+  return { [name]: report.statistics.total.duplicatedLines };
 }
 
 /** Comments that hide code from the counting tools, or from the type checker and Semgrep. */
@@ -111,6 +113,11 @@ function suppressions(at: string): Counts {
 /** The counts for the checkout at `dir`, by default this one as it is now. */
 export function measure(dir = root): Counts {
   const only = Object.values(BIOME_RULES).map((r) => `--only=${r}`);
+  // The checked web modules' declarations, which src's types read, are generated: write them first.
+  if (existsSync(join(dir, "scripts/web-types.mjs"))) {
+    const types = spawnSync(process.execPath, [join(dir, "scripts/web-types.mjs")], { cwd: dir, encoding: "utf8", timeout: TOOL_TIMEOUT_MS });
+    if (types.status !== 0) throw new Error(`scripts/web-types.mjs failed: ${(types.stdout + types.stderr).trim().slice(0, 500)}`);
+  }
   const counts = {
     ...cruiseCounts(json(["depcruise", ...SOURCES, "--output-type", "json"], dir)),
     ...knipCounts(json(["knip", "--no-progress", "--reporter", "json"], dir)),
@@ -118,17 +125,31 @@ export function measure(dir = root): Counts {
     // src only (tsconfig.build.json). hoop allows non-null assertions, so they don't count.
     ...typeCounts(json(["type-coverage", "-p", "tsconfig.build.json", "--strict", "--ignore-non-null-assertion", "--json-output"], dir)),
     ...suppressions(dir),
+    // Patterns used outside the module that owns them (scripts/banned.ts).
+    ...bannedCounts(dir),
   };
+  return {
+    ...counts,
+    ...jscpdCounts(jscpd(dir, [...SOURCES, "--min-tokens", "60", "--ignore", "web/vendor/**"])),
+    // Tests repeat setups in shorter runs, so they count from a lower minimum; fixtures are data.
+    ...jscpdCounts(jscpd(dir, [...TEST_JSCPD]), "duplicatedTestLines"),
+  };
+}
+
+/** jscpd's arguments for test/: its TypeScript, from TEST_MIN_TOKENS tokens, without the fixtures. */
+const TEST_MIN_TOKENS = 40;
+const TEST_JSCPD = ["test", "--min-tokens", String(TEST_MIN_TOKENS), "--format", "typescript", "--ignore", "test/fixtures/**"];
+
+/** jscpd's JSON report for the checkout at `dir`, run with `args`. */
+function jscpd(dir: string, args: string[]): any {
   const out = mkdtempSync(join(tmpdir(), "hoop-jscpd-"));
   try {
-    const r = run(["jscpd", ...SOURCES, "--min-tokens", "60", "--ignore", "web/vendor/**", "--reporters", "json", "--output", out, "--silent"], dir);
-    let report: any;
+    const r = run(["jscpd", ...args, "--reporters", "json", "--output", out, "--silent"], dir);
     try {
-      report = JSON.parse(readFileSync(join(out, "jscpd-report.json"), "utf8"));
+      return JSON.parse(readFileSync(join(out, "jscpd-report.json"), "utf8"));
     } catch {
       throw new Error(`jscpd wrote no report (exit ${r.status}): ${r.stderr.trim().slice(0, 500)}`);
     }
-    return { ...counts, ...jscpdCounts(report) };
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -209,7 +230,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const line of better) console.log(`Less debt than ${ref.slice(0, 7)}: ${line}`);
   if (worse.length)
     console.error(
-      "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail or jscpd; grep for suppressions) to see what to fix.",
+      "Run the tool for the count that grew (depcruise, knip, biome lint, type-coverage --detail, jscpd or tsx scripts/banned.ts; grep for suppressions) to see what to fix.",
     );
   else console.log(`No new debt: ${JSON.stringify(now)}`);
   process.exit(worse.length ? 1 : 0);

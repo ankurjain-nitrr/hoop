@@ -1,6 +1,6 @@
 // hoop review page. Renders a review from /api/reviews/:id; review.js adds commenting through `hooks`.
 import { esc } from "/esc.js";
-import { ACTION, PR, READ, REVIEW, statusBadge } from "/status.js";
+import { ACTION, MESSAGES_OFF, PR, READ, REVIEW, statusBadge } from "/status.js";
 import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldSummary, tally } from "/fold.js";
 import { announce, frame, PAGES_STOPPED, setBanner, updateNav } from "/frame.js";
 import { focusSpot, regainFocus } from "/focus.js";
@@ -249,6 +249,7 @@ const DELIVERY = {
   no_session: () => "Not read yet; no live Claude session took it",
   other_home: () => "Not read yet; Claude's session uses another hoop",
   failed: () => "Not read yet; couldn't reach Claude's session",
+  off: () => MESSAGES_OFF,
 };
 
 /**
@@ -261,7 +262,24 @@ const TOLD = {
   no_session: () => "Claude wasn't told; no live Claude session took it",
   other_home: () => "Claude wasn't told; its session uses another hoop",
   failed: () => "Claude wasn't told; couldn't reach Claude's session",
+  off: () => MESSAGES_OFF,
 };
+
+/** What Claude did after reading a review, as its receipt says it. */
+const RESPONDED = { revised: "Revised", replied: "Answered" };
+
+/**
+ * A read review's receipt: what Claude did after reading it ("Revised by Claude 21:10", "Answered by
+ * Claude 21:06"), else when it read it, with "No response yet" while the server says the review waits
+ * on Claude's response. A review with no entry in `responses` (an approval, a closed review, a
+ * session's own comment, or a quick question's card) says only when Claude read it.
+ */
+function readText(r, key, of) {
+  const who = r.by === "agent" ? "Claude" : r.by;
+  const done = of.responses?.[key];
+  if (done && RESPONDED[done.kind]) return `${RESPONDED[done.kind]} by ${who} ${readAt(done.at)}`;
+  return `Read by ${who} ${readAt(r.at)}${done?.kind === "none" ? " · No response yet" : ""}`;
+}
 
 /**
  * Whether and when Claude read a submitted review, as a short status: "Read by Claude 21:04", "Sent
@@ -271,7 +289,7 @@ const TOLD = {
  */
 export function receiptText(key, of = state.view) {
   const r = of?.receipts?.[key];
-  if (r) return `Read by ${r.by === "agent" ? "Claude" : r.by} ${readAt(r.at)}`;
+  if (r) return readText(r, key, of);
   const d = of?.deliveries?.[key];
   if (of?.asks_to_act?.[key] === false) return d && TOLD[d.outcome] ? TOLD[d.outcome](d) : "Nothing for Claude to act on";
   return d && DELIVERY[d.outcome] ? DELIVERY[d.outcome](d) : "Not read yet";
@@ -719,6 +737,13 @@ const PR_CANT_MERGE = {
 
 /** An action item's state in words: when it was added and what closes it, or how and when it closed. */
 function actionStateText(a) {
+  // A close Claude's session wasn't told of, with messages into a session off.
+  if (a.state !== "open" && a.delivery === "off") return `${closedText(a)} · ${MESSAGES_OFF}`;
+  return closedText(a);
+}
+
+/** An action item's state and when, as its row says it. */
+function closedText(a) {
   if (a.state === "done") return a.closed_by === "hoop" ? `hoop saw it done ${readAt(a.closed_at)}` : `marked done ${readAt(a.closed_at)}`;
   if (a.state === "wont_do") return `won't do (${readAt(a.closed_at)}): ${a.reason}`;
   if (a.state === "withdrawn") return `withdrawn (${readAt(a.closed_at)}): ${a.reason}`;
@@ -849,7 +874,7 @@ function listHtml() {
   };
   // A row is its link and, beside it, never inside it, the review's Close.
   const row = (m) =>
-    `<div class="list-row"><a class="row" href="${esc(reviewPath(m.id))}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge("unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
+    `<div class="list-row"><a class="row" href="${esc(reviewPath(m.id))}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${m.unread ? statusBadge(m.not_sent ? "not_sent" : "unread", READ) : ""}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
   if (!list.length && !prs.length && !home.actions.length) return startHtml();
@@ -1349,8 +1374,10 @@ async function reopenAction(id) {
   // A second press while the first runs sends nothing.
   if (!u || u.id !== id || u.busy) return;
   u.busy = true;
+  let told = "Claude is told.";
   try {
-    await post(`/api/actions/${encodeURIComponent(id)}`, { action: "reopen" });
+    const item = await post(`/api/actions/${encodeURIComponent(id)}`, { action: "reopen" });
+    if (item?.delivery === "off") told = `${MESSAGES_OFF}.`;
   } catch (err) {
     home.undone = { ...u, busy: false, error: err.message };
     home.focus = "sel:[data-action-reopen]";
@@ -1360,7 +1387,7 @@ async function reopenAction(id) {
   home.undone = null;
   home.actions = await api("/api/actions").catch(() => home.actions);
   loadLoopTime();
-  announce(`Opened “${title}” again. Claude is told.`);
+  announce(`Opened “${title}” again. ${told}`);
   home.focus = `sel:[data-action-done="${CSS.escape(id)}"]`;
   paintList();
 }
@@ -1697,10 +1724,11 @@ function watchReceipts() {
     const v = state.view;
     const keys = [...document.querySelectorAll("[data-receipt]")].map((el) => el.dataset.receipt);
     if (!v || document.visibilityState !== "visible" || keys.every((k) => v.receipts?.[k])) return;
-    const { receipts } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
+    const { receipts, responses } = await api(`/api/reviews/${v.meta.id}/receipts`).catch(() => ({}));
     if (!receipts || state.view !== v) return;
     const sent = sentUnread(v);
     v.receipts = receipts;
+    if (responses) v.responses = responses;
     // The agent line shows again once Claude read the review, saying what it does now.
     if (sent && !sentUnread(v)) await askAgent();
     if (state.view === v) showReceipts();
