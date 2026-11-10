@@ -201,6 +201,20 @@ function askCounts(hoop: Hoop, meta: Meta) {
   return { state: askState(hoop.store, meta), questions: items.length, unanswered: items.filter((q) => !answers.get(q.id)?.length).length };
 }
 
+/**
+ * Whether Home shows "No response yet" on a review: Claude read its latest submitted review, which
+ * asks it to act, and hasn't revised or replied since, while its session is idle or has ended. A
+ * session at work, or waiting on the review, may still be responding.
+ */
+export function noResponse(hoop: Hoop, meta: Meta, sessions: SessionReader = claudeSessions): boolean {
+  if (meta.ask) return false;
+  const key = latestKey(hoop, meta);
+  // Unread wins: a read by a session other than the owner's leaves the review unread for its owner.
+  if (!key || unread(hoop, meta) || responses(hoop, meta)[key]?.kind !== "none") return false;
+  const state = agentState(hoop.store, meta, sessions)?.state;
+  return state === "idle" || state === "ended";
+}
+
 /** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
   const session = sessionOf(hoop, meta, live, sessions);
@@ -210,6 +224,7 @@ function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: S
     place: placeOf(meta),
     unread: unread(hoop, meta),
     ...(unread(hoop, meta) && notSent(hoop, meta) ? { not_sent: true } : {}),
+    ...(noResponse(hoop, meta, sessions) ? { no_response: true } : {}),
     ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),
   };
 }
