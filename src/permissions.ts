@@ -13,6 +13,13 @@ import { HoopError, isList, isRecord, tryReadJson, writeAtomic } from "./util.js
 // A waiting prompt keeps the tool's input in full, so the page can show exactly what it will run or
 // change; the input goes once the prompt is answered or handed to the terminal.
 
+/**
+ * Tools whose prompt is no yes or no: Claude Code's question tool and leaving plan mode. An allow for
+ * them needs the answer itself (`updatedInput`), which Allow once doesn't give, and the plan hook
+ * already reviews a plan; so hoop never records them, and the terminal answers them as without hoop.
+ */
+export const NOT_ANSWERED = new Set(["AskUserQuestion", "ExitPlanMode"]);
+
 /** The name in hoop's on list that turns answering permission prompts from hoop on. */
 export const PERMISSION_PROMPTS = "permission_prompts";
 
@@ -104,6 +111,7 @@ export function askPermission(home: string, input: unknown, now = new Date()): {
   if (!isOn(home, PERMISSION_PROMPTS)) throw new HoopError(`permission prompts aren't on: add a line ${PERMISSION_PROMPTS} to ${join(home, "on")}`);
   const f = hookFields(input);
   if (f.event !== "PermissionRequest" || !f.session || !f.tool) throw new HoopError("expected a PermissionRequest hook input");
+  if (NOT_ANSWERED.has(f.tool)) throw new HoopError(`hoop doesn't answer ${f.tool}: the terminal does`);
   prunePermissions(home, now.getTime());
   const p: Permission = {
     id: newId("pm"),
