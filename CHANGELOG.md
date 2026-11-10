@@ -24,6 +24,8 @@ All notable changes to hoop are listed here. The format follows
 
 - A review's receipt says whether Claude responded after reading it: "Read by Claude 14:02 · No
   response yet", then "Revised by Claude 14:10" or "Answered by Claude 14:06" (#271).
+- Home shows "No response yet" on a review Claude read and hasn't revised or replied to, while its
+  session is idle or has ended (#271).
 
 ### Fixed
 

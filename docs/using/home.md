@@ -23,7 +23,9 @@ Reviews, quick questions and builds sit under **Pending**; approved, closed and 
 **Completed**, which starts folded. Each section is grouped by the Claude session that sent them, or
 by you for a file you opened with `hoop open`. A session's group shows its name, the start of its
 ID, its folder and whether it is still running. Each review shows its title and TL;DR, newest first,
-and "Not read yet" while Claude hasn't read your latest review of it.
+and "Not read yet" while Claude hasn't read your latest review of it. Once Claude has read it, "No
+response yet" shows while Claude hasn't revised the review or replied, but only while its session is
+idle or has ended: a session at work may still be answering.
 
 - **Rename** beside a session names it. hoop also adds the name to the session's transcript, as
   `/rename` does, so Claude Code shows the same name.

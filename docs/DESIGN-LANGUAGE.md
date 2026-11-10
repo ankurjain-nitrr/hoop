@@ -26,7 +26,7 @@ a dialog backdrop, which is black at low opacity.
 | `--live` (amber) | Agent work running now (a clock icon), or your move (a person icon) | Running, Working, Checks running, a live session; Awaiting review, Waiting on you, open action items, an unsent comment. Also the current page in the nav, its one use that isn't live |
 | `--ok` (green) | Finished well | Approved, Done, Checks passed, Merged, Applied in rev N, a recommended option |
 | `--warn` (red) | Needs fixing | Changes requested, Checks failing, Stalled, Not running, a change Claude overrode, a contradiction Claude flagged in its own text, the pages-stopped banner |
-| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet, what Claude generated or changed, a change Claude proposes until it is accepted (its card's border, and the text it would insert, blue on `--info-wash`), the TL;DR, a new revision, a newer hoop on Home (its callout, with the command that updates) |
+| `--info` (blue) | A neutral fact, nothing to do | Commented, Building, In review, Not read yet, No response yet, what Claude generated or changed, a change Claude proposes until it is accepted (its card's border, and the text it would insert, blue on `--info-wash`), the TL;DR, a new revision, a newer hoop on Home (its callout, with the command that updates) |
 | `--muted` (grey) | Everything else | Queued, Idle, Ended, the "Claude's session has ended" line on the review and quick-question pages (its resume command stays as code), Withdrawn, Closed, Replaced, how far a comment got |
 | `--link` | A link, always underlined (except a link inside a link; see Exceptions) | Links in notes, descriptions and action items |
 | `--focus` | Keyboard focus and the line jumped to | Focus rings, a block being edited |
@@ -206,7 +206,9 @@ reads "Read by Claude 14:02 · No response yet" until Claude responds after read
 did: "Revised by Claude 14:10" for a revision of its own (not a reviewer's Apply), else "Answered by
 Claude 14:06" for a reply. A review that asks Claude to act on nothing (an approval, any review of a
 closed review or of a file you opened, another session's comment) says only "Read by", and so does a
-quick question's card: neither ever says "No response yet".
+quick question's card: neither ever says "No response yet". On Home, the same review's row shows a
+"No response yet" badge (`--info`, a comment icon) while its session is idle or has ended, and not
+while the session works or waits on the review.
 
 **Parts turned off.** When hoop's off list turns a part off, the page says so where the part
 would have shown, naming the list, not as an error. With `messages` off, what you send isn't

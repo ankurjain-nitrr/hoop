@@ -55,6 +55,8 @@ export const READ = {
   unread: { label: "Not read yet", tone: "info", icon: "clock" },
   // Unread since messages into a session are off in hoop's off list: nothing told Claude.
   not_sent: { label: MESSAGES_OFF, tone: "muted", icon: "minus" },
+  // Claude read the latest review and hasn't revised or replied, while its session is idle or ended.
+  no_response: { label: "No response yet", tone: "info", icon: "comment" },
 };
 
 /** A todo's or subagent's state on the Work page, and a session's. */
