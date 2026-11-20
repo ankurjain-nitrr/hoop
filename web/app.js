@@ -792,12 +792,17 @@ const WAITS = {
  */
 const PROMPTS = new Set(["permission", "question", "dialog"]);
 
-/** The Work page's sessions and subagents whose current step waits on a prompt, as Waiting on you rows. */
+/**
+ * The Work page's sessions and subagents whose current step waits on a prompt, as Waiting on you rows.
+ * A session's dialog while one of its subagents waits is that subagent's prompt, so it lists once.
+ */
 function workWaits(sessions) {
   return sessions.flatMap((s) => {
     const name = s.name ?? "Unnamed session";
     const href = workSessionPath(s.id);
-    const steps = [s.doing, ...(s.agents ?? []).map((a) => a.doing)].filter((d) => d && PROMPTS.has(d.waiting));
+    const agents = (s.agents ?? []).map((a) => a.doing);
+    const own = s.doing?.waiting === "dialog" && agents.some((d) => d?.waiting) ? undefined : s.doing;
+    const steps = [own, ...agents].filter((d) => d && PROMPTS.has(d.waiting));
     return steps.map((d) => ({ kind: "work", title: d.what, href, since: d.at, session: name }));
   });
 }

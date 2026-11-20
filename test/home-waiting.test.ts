@@ -175,6 +175,27 @@ test(
     }),
 );
 
+test("regression: a subagent's prompt lists once, not again as its session's dialog", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ hoop, base, page }) => {
+    hoop.submit(example());
+    const at = new Date(Date.now() - 60_000).toISOString();
+    // The session's open Agent call reads as a dialog while its subagent waits on a permission prompt: one prompt on screen.
+    const sessions = [
+      workSession("work-session-1", "Export work", { what: "A subagent is running: Check links", at, open: true, waiting: "dialog" }, [
+        { id: "a1", description: "Check links", doing: { what: "Allow curl?", at, open: true, waiting: "permission" } },
+      ]),
+    ];
+    await page.route("**/api/work", (route) => route.fulfill({ json: { sessions } }));
+    await page.goto(base);
+    await page.locator("#g-waiting-body .waiting-row .t", { hasText: "Allow curl?" }).waitFor();
+    const titles = await page.locator("#g-waiting-body .waiting-row .t").allTextContents();
+    assert.deepEqual(
+      titles.filter((t) => t !== "Order export: requirements"),
+      ["Allow curl?"],
+    );
+  }),
+);
+
 test("regression: Close on a Waiting on you row puts focus on the next row there", { skip: BROWSER_SKIP }, () =>
   withBrowser(async ({ hoop, base, page }) => {
     const ids = ["First plan", "Second plan", "Third plan"].map((title) => hoop.submit({ ...example(), title }).review_id);
