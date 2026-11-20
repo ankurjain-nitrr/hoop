@@ -462,26 +462,106 @@ test("regression: a prompt answered in the terminal leaves focus on its own note
   });
 });
 
+/** Presses a prompt's Allow once, and checks the press counted for nothing. */
+async function pressIgnored(page: Page, h: string, id: string, why: string) {
+  await page.locator(`[data-permission="${id}"] [data-perm-allow]`).click();
+  await page.waitForTimeout(300);
+  assert.equal(readPermission(h, id)!.state, "waiting", why);
+}
+
 test("regression: a note that expires moves the cards below, and Allow once waits a moment", { skip: BROWSER_SKIP }, async () => {
   const h = home();
   const old = ask(h, "Bash", { command: "ls" });
   const id = ask(h, "Bash", { command: "echo two" });
-  // Answered almost ten minutes ago: its note goes from the page in two seconds.
-  settlePermission(h, old, "terminal", new Date(Date.now() - 10 * 60 * 1000 + 2000));
   await withBrowser(
     async ({ base, page }) => {
       await workFast(page, base);
+      await page.locator(`[data-permission="${id}"] [data-perm-allow]`).waitFor();
+      await settled(page);
+      // Answered almost ten minutes ago, once the page shows: its note goes from the page in four
+      // seconds, well after its hold lets go.
+      settlePermission(h, old, "terminal", new Date(Date.now() - 10 * 60 * 1000 + 4000));
       await page.locator(`[data-permission-note="${old}"]`).waitFor();
+      await page.waitForFunction((pid) => !document.querySelector(`[data-permission-note="${pid}"]`), old, { timeout: 10000, polling: 10 });
+      await pressIgnored(page, h, id, "a press right after the card moved counts for nothing");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("regression: a card that moves with no redraw, as when the window narrows, makes Allow once wait", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const id = ask(h, "Bash", { command: "npm test", description: "Run the tests ".repeat(30).trim() });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await page.goto(`${base}/`);
+      await page.locator(`[data-permission="${id}"] [data-perm-allow]`).waitFor();
       await settled(page);
       const y = await allowY(page, id);
+      // The description above the buttons wraps onto more lines.
+      await page.setViewportSize({ width: 420, height: 900 });
       await page.waitForFunction(
-        ([pid, at]) => document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().y < (at as number) - 1,
+        ([pid, at]) => document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().y > (at as number) + 1,
         [id, y] as const,
         { timeout: 5000, polling: 10 },
       );
-      await page.locator(`[data-permission="${id}"] [data-perm-allow]`).click();
+      await pressIgnored(page, h, id, "a press right after the card moved counts for nothing");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("regression: a card that slides down on screen as the scroll clamps makes Allow once wait", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const id = ask(h, "Bash", { command: "npm test" });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.setViewportSize({ width: 1000, height: 600 });
+      await workFast(page, base);
+      const allow = page.locator(`[data-permission="${id}"] [data-perm-allow]`);
+      await allow.waitFor();
+      await settled(page);
+      // Scrolled to the bottom of a page made taller, with the card near the top of the screen: the
+      // next redraw drops what made it taller, the browser pulls the scroll back, and the card slides down.
+      const y = await page.evaluate((pid) => {
+        const b = document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!;
+        const top = b.getBoundingClientRect().top + window.scrollY;
+        const spacer = document.createElement("div");
+        spacer.style.height = `${Math.max(0, top - 100 + window.innerHeight - document.documentElement.scrollHeight)}px`;
+        document.getElementById("app")!.append(spacer);
+        window.scrollTo(0, top - 100);
+        return b.getBoundingClientRect().top;
+      }, id);
+      assert.ok(y > 50 && y < 200, `the card is near the top of the screen (${y})`);
+      await page.waitForFunction(
+        ([pid, at]) => document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().top > (at as number) + 1,
+        [id, y] as const,
+        { timeout: 5000, polling: 10 },
+      );
+      await pressIgnored(page, h, id, "a press right after the card slid counts for nothing");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+test("the person's own scrolling never makes Allow once wait", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const id = ask(h, "Bash", { command: "npm test", description: "Run the tests ".repeat(60).trim() });
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.setViewportSize({ width: 600, height: 400 });
+      await workFast(page, base);
+      const allow = page.locator(`[data-permission="${id}"] [data-perm-allow]`);
+      await allow.waitFor();
+      await allow.scrollIntoViewIfNeeded();
+      await settled(page);
+      await page.mouse.wheel(0, 60);
+      // Past at least one redraw, which finds the card where the scroll put it.
       await page.waitForTimeout(300);
-      assert.equal(readPermission(h, id)!.state, "waiting", "a press right after the card moved counts for nothing");
+      await allow.click();
+      await page.locator(`[data-permission-note="${id}"]`).waitFor();
+      assert.equal(readPermission(h, id)!.state, "allowed");
     },
     new Hoop(new Store(h)),
   );

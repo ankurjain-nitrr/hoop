@@ -212,3 +212,33 @@ test(
       assert.ok(await hasFocus(page.locator("#finishBuild"), 2000), `the build's redraw keeps focus on Finish and review ${RULE}`);
     }),
 );
+
+/**
+ * Draws two cards' controls (each card's sharing a key when `keyed`) above nine plain buttons,
+ * focuses t3, draws them again without it, and says which button took the focus. A string, as
+ * the test runner's transform would name functions the page doesn't know.
+ */
+const regainedAfterT3 = (keyed: boolean) => `(async () => {
+  const { focusSpot, regainFocus } = await import("/focus.js");
+  const root = document.createElement("div");
+  document.body.append(root);
+  const key = (k) => (${keyed} ? \` data-focus-key="\${k}"\` : "");
+  const cards = ["a", "b"].map((k) => \`<div tabindex="-1"\${key(k)}><button\${key(k)}>Allow once</button><button\${key(k)}>Deny</button></div>\`).join("");
+  const plain = (gone) => ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"].filter((t) => t !== gone).map((t) => \`<button>\${t}</button>\`).join("");
+  root.innerHTML = cards + plain("");
+  [...root.querySelectorAll("button")].find((b) => b.textContent === "t3").focus();
+  const at = focusSpot(root);
+  root.innerHTML = cards + plain("t3");
+  regainFocus(root, at);
+  const text = document.activeElement?.textContent;
+  root.remove();
+  return text;
+})()`;
+
+test("regression: when a control is gone, focus goes to the one in its place, counted without other cards' controls", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ base, page }) => {
+    await page.goto(`${base}/`);
+    assert.equal(await page.evaluate(regainedAfterT3(true)), "t4", "with keyed cards above, the control now in t3's place");
+    assert.equal(await page.evaluate(regainedAfterT3(false)), "t4", "without keys, as before");
+  }),
+);

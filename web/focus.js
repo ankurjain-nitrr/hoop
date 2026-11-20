@@ -24,17 +24,21 @@ const focusable = (root) => [...root.querySelectorAll(FOCUSABLE)].filter(canFocu
 
 /**
  * Where the focused control is in `root`: what it is, which of the controls like it, its place
- * among all, and its group. Null when focus is elsewhere, or on something that can't take focus
+ * among the controls outside any other group, and its group. Null when focus is elsewhere, or on something that can't take focus
  * again (hidden or turned off), so a redraw moves nothing.
  */
 export function focusSpot(root, active = document.activeElement) {
   if (!active || active === root || !root.contains(active)) return null;
   const all = focusable(root);
-  const place = all.indexOf(active);
-  if (place < 0) return null;
+  if (!all.includes(active)) return null;
   const key = what(active);
+  // Its place among the controls a fallback may pick from: those outside any other group.
+  const place = outside(all, group(active)).indexOf(active);
   return { key, nth: all.filter((el) => what(el) === key).indexOf(active), place, group: group(active) };
 }
+
+/** The controls in `all` outside any group but `own`: all of them on a page with no groups. */
+const outside = (all, own) => all.filter((el) => !group(el) || group(el) === own);
 
 /** Whether focus fell to the page itself, as it does when the focused control is redrawn. */
 const focusLost = () => !document.activeElement || document.activeElement === document.body;
@@ -50,6 +54,6 @@ export function regainFocus(root, at, back = false) {
   const all = focusable(root);
   const same = all.filter((el) => what(el) === at.key);
   const kin = at.group ? all.filter((el) => group(el) === at.group) : [];
-  const free = all.filter((el) => !group(el) || group(el) === at.group);
+  const free = outside(all, at.group);
   (same[at.nth] ?? same[0] ?? kin[0] ?? free[Math.min(at.place, free.length - 1)])?.focus();
 }

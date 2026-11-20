@@ -7,9 +7,10 @@
 // Nothing here may approve by accident: cards go oldest first, so a new one joins below; an answered
 // card keeps its place and size for a moment, so the next one never moves up under the pointer; an
 // Allow once press is ignored for a moment after any answer or after the cards changed or moved on
-// the page (`permissionsPainted`), and a double click counts once. Each card's controls and note
-// share a focus key, so a redraw puts focus back on that prompt's own control or note, never another's. Focus after an answer goes to its note; after a failed Allow once it
-// goes back to that same card's Allow once, which waits out the quiet moment like any other.
+// screen (`permissionsPainted`), and a double click counts once. Each card's controls and note
+// share a focus key, so a redraw puts focus back on that prompt's own control or note, never
+// another's. Focus after an answer goes to its note; after a failed Allow once it goes back to that
+// same card's Allow once, which waits out the quiet moment like any other.
 import { esc } from "/esc.js";
 import { readAt } from "/activity.js";
 import { peek, post } from "/api.js";
@@ -114,19 +115,33 @@ export async function loadPermissions() {
   perm.repaint(false);
 }
 
-/** Where each prompt's Allow once sat on the page after the last redraw, by prompt ID. */
+/** Where each prompt's Allow once sat on screen when last looked at, by prompt ID, and how tall the page was then. */
 let places = new Map();
+let pageHeight = 0;
 
 /**
- * Called after every redraw of a page that shows the cards. When an Allow once sits elsewhere on
- * the page than after the last redraw, as when Work lists another session first or a note above it
- * expired, Allow once waits a moment, so a press aimed at one card lands on no other.
+ * Looks where each Allow once sits on screen. When one moved since the last look, as when Work lists
+ * another session first, a note above expired, the window narrowed or the browser pulled the scroll
+ * back, Allow once waits a moment, so a press aimed at one card lands on no other. A redraw calls it,
+ * and so do the page changing size, the window resizing and fonts loading. After a scroll that left
+ * the page's height as it was, the person's own, it only looks again, so scrolling never blocks.
  */
-export function permissionsPainted() {
-  const now = new Map([...document.querySelectorAll("[data-perm-allow]")].map((b) => [b.dataset.permAllow, b.getBoundingClientRect().top + window.scrollY]));
-  if ([...now].some(([id, y]) => places.has(id) && Math.abs(places.get(id) - y) >= 1)) perm.quietUntil = Math.max(perm.quietUntil, Date.now() + QUIET_MS);
+export function permissionsPainted(scrolled = false) {
+  const now = new Map([...document.querySelectorAll("[data-perm-allow]")].map((b) => [b.dataset.permAllow, b.getBoundingClientRect().top]));
+  const height = document.documentElement.scrollHeight;
+  const own = scrolled && height === pageHeight;
+  if (!own && [...now].some(([id, y]) => places.has(id) && Math.abs(places.get(id) - y) >= 1))
+    perm.quietUntil = Math.max(perm.quietUntil, Date.now() + QUIET_MS);
   places = now;
+  pageHeight = height;
 }
+
+// Cards move without a redraw too: a part folding open, text rewrapping, a font loading.
+const app = document.getElementById("app");
+if (app) new ResizeObserver(() => permissionsPainted()).observe(app);
+window.addEventListener("resize", () => permissionsPainted());
+window.addEventListener("scroll", () => permissionsPainted(true), { passive: true });
+document.fonts?.addEventListener("loadingdone", () => permissionsPainted());
 
 /** Whether a Deny box is open, which a refresh waits for, so it never drops what is typed. */
 export const permissionFormOpen = () => perm.denying !== null;
