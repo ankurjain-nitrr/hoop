@@ -1862,6 +1862,7 @@ label + .draft-saved[data-slot] {
   font-size: var(--text-detail);
 }
 .work .now .when,
+.work .now .where,
 .work .recent time {
   color: var(--muted);
   font-size: var(--text-detail);

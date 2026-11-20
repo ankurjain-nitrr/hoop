@@ -655,13 +655,20 @@ function agentsHtml(s, now) {
 
 const ago = (at, now) => `<time datetime="${esc(at)}">${span(now - Date.parse(at))} ago</time>`;
 
-/** What a session does now, in one line: its running tool call and for how long, else its latest one. */
+/** What a step can wait on that only the terminal answers: Claude Code's own question, or another dialog. */
+const TERMINAL_ONLY = new Set(["question", "dialog"]);
+
+/**
+ * What a session does now, in one line: its running tool call and for how long, else its latest one.
+ * Claude Code's own question or another dialog says where to answer it: hoop can't, so the terminal does.
+ */
 function nowHtml(s, now) {
   const d = s.doing;
   if (!d) return s.state === "busy" ? '<p class="now"><span class="now-label">Now:</span> <span class="what">activity unknown</span></p>' : "";
   const when = d.open ? `<span class="when">for ${span(now - Date.parse(d.at))}</span>` : `<span class="when">${ago(d.at, now)}</span>`;
   const badge = d.waiting ? `${statusBadge("waiting", WORK)} ` : "";
-  return `<p class="now"><span class="now-label">Now:</span> ${badge}<span class="what">${esc(d.what)}</span> ${when}</p>`;
+  const where = TERMINAL_ONLY.has(d.waiting) ? ' <span class="where">Answer this in the terminal.</span>' : "";
+  return `<p class="now"><span class="now-label">Now:</span> ${badge}<span class="what">${esc(d.what)}</span> ${when}${where}</p>`;
 }
 
 /**

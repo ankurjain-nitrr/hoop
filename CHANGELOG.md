@@ -8,6 +8,8 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Work's **Now:** line says "Answer this in the terminal." while a session waits on Claude Code's
+  own question or another dialog, which hoop can't answer (#212).
 - Home's **Waiting on you** lists everything Claude waits on you for, oldest first, each with what
   it asks, how long it has waited and its session: reviews awaiting your verdict ("Review · Approve
   or request changes"), unanswered quick questions ("Question · Answer"), builds with a section to
