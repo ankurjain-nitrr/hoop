@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Hoop } from "../src/hoop.js";
 import { askPermission, readPermission, settlePermission } from "../src/permissions.js";
 import { Store } from "../src/store.js";
-import { workHook } from "../src/work.js";
+import { editWork, workHook } from "../src/work.js";
 import { BROWSER_SKIP, tempHome, withBrowser } from "./helpers.js";
 
 // Claude Code's permission prompts on Work and in Home's Waiting on you, in the words decided in
@@ -365,6 +365,123 @@ test("regression: a hold behind an open Deny box counts down only once the card 
       assert.equal(readPermission(h, second)!.state, "waiting", "a press right after the cards changed counts for nothing");
       await page.waitForTimeout(700);
       assert.ok(Math.abs((await allowY(page, second)) - y) < 1, "the hold still holds a second after the card showed answered");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
+/** A second session with work, newer than the first, so Work lists it on top. */
+const OTHER = "99999999-2222-3333-4444-555555555555";
+/** A prompt in `session`. */
+const askIn = (h: string, session: string, command: string) =>
+  askPermission(h, { ...INPUTS["permission-request"], session_id: session, tool_name: "Bash", tool_input: { command } }, new Date((tick += 5))).id;
+
+/** Two sessions with the same work and the same prompt, the second session newest and so on top. */
+function twoSessions() {
+  const h = home();
+  workHook(
+    h,
+    {
+      ...HOOKS["post-taskcreate"],
+      session_id: OTHER,
+      tool_input: { subject: "Read the code" },
+      tool_response: { task: { id: "1", subject: "Read the code" } },
+    },
+    new Date(Date.now() + 1000).toISOString(),
+  );
+  return { h, older: askIn(h, SESSION, "npm test"), newer: askIn(h, OTHER, "npm test") };
+}
+
+/** Opens Work, asking for its lists every 200 ms. */
+async function workFast(page: import("playwright-core").Page, base: string) {
+  await page.addInitScript(() => Object.assign(window, { HOOP_WORK_MS: 200 }));
+  await page.goto(`${base}/work`);
+}
+
+type Page = import("playwright-core").Page;
+/**
+ * Runs `fn` on Work with two sessions' prompts of the same name, once both show and the quiet
+ * moment has passed.
+ */
+function onTwoSessions(fn: (page: Page, s: ReturnType<typeof twoSessions>) => Promise<void>) {
+  const s = twoSessions();
+  return withBrowser(
+    async ({ base, page }) => {
+      await workFast(page, base);
+      await page.locator(`[data-permission="${s.older}"] [data-perm-allow]`).waitFor();
+      await settled(page);
+      await fn(page, s);
+    },
+    new Hoop(new Store(s.h)),
+  );
+}
+
+test("regression: when sessions swap places on Work, a press where a card was allows nothing", { skip: BROWSER_SKIP }, async () => {
+  await onTwoSessions(async (page, { h, older, newer }) => {
+    const box = (await page.locator(`[data-permission="${newer}"] [data-perm-allow]`).boundingBox())!;
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    assert.ok((await allowY(page, older)) > box.y, "the newer session is on top");
+    // The older session does something else: it moves to the top, and its card to where the other was.
+    editWork(h, SESSION, (r) => {
+      r.updated = new Date(Date.now() + 5000).toISOString();
+    });
+    await page.waitForFunction(
+      ([id, px, py]) => document.elementFromPoint(px as number, py as number)?.getAttribute("data-perm-allow") === id,
+      [older, x, y] as const,
+      { timeout: 5000, polling: 10 },
+    );
+    await page.mouse.click(x, y);
+    await page.waitForTimeout(300);
+    assert.deepEqual(
+      [readPermission(h, older)!.state, readPermission(h, newer)!.state],
+      ["waiting", "waiting"],
+      "a press right after the cards moved counts for nothing",
+    );
+  });
+});
+
+test("regression: a prompt answered in the terminal leaves focus on its own note, not another card's Allow once of the same name", {
+  skip: BROWSER_SKIP,
+}, async () => {
+  await onTwoSessions(async (page, { h, older, newer }) => {
+    const allow = page.locator(`[data-permission="${newer}"] [data-perm-allow]`);
+    assert.equal(
+      await allow.getAttribute("aria-label"),
+      await page.locator(`[data-permission="${older}"] [data-perm-allow]`).getAttribute("aria-label"),
+      "both buttons have the same name",
+    );
+    await allow.focus();
+    settlePermission(h, newer, "terminal");
+    await page.locator(`[data-permission-note="${newer}"]`).waitFor();
+    await page.waitForTimeout(500);
+    assert.deepEqual(
+      await page.evaluate(() => [document.activeElement?.getAttribute("data-permission-note"), document.activeElement?.getAttribute("data-perm-allow")]),
+      [newer, null],
+      "focus is on the answered prompt's note",
+    );
+  });
+});
+
+test("regression: a note that expires moves the cards below, and Allow once waits a moment", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const old = ask(h, "Bash", { command: "ls" });
+  const id = ask(h, "Bash", { command: "echo two" });
+  // Answered almost ten minutes ago: its note goes from the page in two seconds.
+  settlePermission(h, old, "terminal", new Date(Date.now() - 10 * 60 * 1000 + 2000));
+  await withBrowser(
+    async ({ base, page }) => {
+      await workFast(page, base);
+      await page.locator(`[data-permission-note="${old}"]`).waitFor();
+      await settled(page);
+      const y = await allowY(page, id);
+      await page.waitForFunction(
+        ([pid, at]) => document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().y < (at as number) - 1,
+        [id, y] as const,
+        { timeout: 5000, polling: 10 },
+      );
+      await page.locator(`[data-permission="${id}"] [data-perm-allow]`).click();
+      await page.waitForTimeout(300);
+      assert.equal(readPermission(h, id)!.state, "waiting", "a press right after the card moved counts for nothing");
     },
     new Hoop(new Store(h)),
   );

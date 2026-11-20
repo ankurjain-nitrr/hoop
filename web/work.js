@@ -26,7 +26,7 @@ import { foldAllHtml, foldBody, foldButton, foldClick, foldCount, foldedByDefaul
 import { inlineHtml, titleHtml } from "./inline.js";
 import { MESSAGES_OFF, statusBadge, WORK } from "./status.js";
 import { icons } from "./icons.js";
-import { loadPermissions, onPermissions, permissionFormOpen, prompts, promptHtml } from "./permissions.js";
+import { loadPermissions, onPermissions, permissionFormOpen, permissionsPainted, prompts, promptHtml } from "./permissions.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
 import { REVIEW_LINK, reviewPath } from "./links.js";
@@ -868,6 +868,7 @@ function paint() {
   refocus(focus, was);
   // Where the place asked for is gone, focus stays on the control in the pressed one's place.
   regainFocus(app, was.at);
+  permissionsPainted();
 }
 
 // Work shows the permission prompts again when they change, or after an answer.

@@ -6,8 +6,9 @@
 //
 // Nothing here may approve by accident: cards go oldest first, so a new one joins below; an answered
 // card keeps its place and size for a moment, so the next one never moves up under the pointer; an
-// Allow once press is ignored for a moment after any answer or after the cards changed or moved, and
-// a double click counts once. Focus after an answer goes to its note; after a failed Allow once it
+// Allow once press is ignored for a moment after any answer or after the cards changed or moved on
+// the page (`permissionsPainted`), and a double click counts once. Each card's controls and note
+// share a focus key, so a redraw puts focus back on that prompt's own control or note, never another's. Focus after an answer goes to its note; after a failed Allow once it
 // goes back to that same card's Allow once, which waits out the quiet moment like any other.
 import { esc } from "/esc.js";
 import { readAt } from "/activity.js";
@@ -111,6 +112,20 @@ export async function loadPermissions() {
   perm.list = list;
   if (perm.denying && !list.some((p) => p.id === perm.denying && p.state === "waiting")) perm.denying = null;
   perm.repaint(false);
+}
+
+/** Where each prompt's Allow once sat on the page after the last redraw, by prompt ID. */
+let places = new Map();
+
+/**
+ * Called after every redraw of a page that shows the cards. When an Allow once sits elsewhere on
+ * the page than after the last redraw, as when Work lists another session first or a note above it
+ * expired, Allow once waits a moment, so a press aimed at one card lands on no other.
+ */
+export function permissionsPainted() {
+  const now = new Map([...document.querySelectorAll("[data-perm-allow]")].map((b) => [b.dataset.permAllow, b.getBoundingClientRect().top + window.scrollY]));
+  if ([...now].some(([id, y]) => places.has(id) && Math.abs(places.get(id) - y) >= 1)) perm.quietUntil = Math.max(perm.quietUntil, Date.now() + QUIET_MS);
+  places = now;
 }
 
 /** Whether a Deny box is open, which a refresh waits for, so it never drops what is typed. */
@@ -225,7 +240,7 @@ function controlsHtml(p) {
   const busy = perm.busy === p.id ? " disabled" : "";
   if (perm.denying === p.id)
     return `<form class="decline" data-perm-deny-form="${id}"><label for="${id}-reason">Reason (optional; Claude reads it)</label><input id="${id}-reason" name="reason" maxlength="${REASON_MAX}" autocomplete="off" value="${esc(perm.reason)}" aria-describedby="${id}-err"><button type="submit" class="btn small" aria-label="Deny: ${name}"${busy}>Deny</button><button type="button" class="btn small" data-perm-cancel aria-label="Cancel denying: ${name}">Cancel</button>${err}</form>`;
-  return `<div class="action-btns"><button type="button" class="btn small primary" data-perm-allow="${id}" aria-label="Allow once: ${name}"${busy}>Allow once</button><button type="button" class="btn small" data-perm-deny="${id}" aria-label="Deny: ${name}"${busy}>Deny</button></div>${err}`;
+  return `<div class="action-btns"><button type="button" class="btn small primary" data-perm-allow="${id}" data-focus-key="${id}" aria-label="Allow once: ${name}"${busy}>Allow once</button><button type="button" class="btn small" data-perm-deny="${id}" data-focus-key="${id}" aria-label="Deny: ${name}"${busy}>Deny</button></div>${err}`;
 }
 
 /** A prompt's element ID, as Work's counts link to it. */
@@ -239,7 +254,7 @@ const elementId = (p) => `permission-${p.session}-${p.id}`.replace(/[^A-Za-z0-9_
 export function promptHtml(p, h, from = "") {
   const id = esc(p.id);
   const tool = `<span class="tag-tool">${esc(p.tool)}</span>`;
-  const note = `<p class="note perm-answered" tabindex="-1" data-permission-note="${id}">${tool} ${esc(ANSWERED[p.state]?.(p) ?? "")}</p>`;
+  const note = `<p class="note perm-answered" tabindex="-1" data-permission-note="${id}" data-focus-key="${id}">${tool} ${esc(ANSWERED[p.state]?.(p) ?? "")}</p>`;
   if (p.state !== "waiting") {
     const h = perm.holds[p.id];
     // Shown answered: its hold counts down from now.
@@ -248,7 +263,7 @@ export function promptHtml(p, h, from = "") {
     const line = note.replace("<p ", `<p data-permission="${id}" `);
     return held ? `<div class="perm-held"${held}>${line}</div>` : line;
   }
-  return `<article class="action permission" id="${elementId(p)}" tabindex="-1" data-permission="${id}" aria-labelledby="${id}-t"><div class="action-head"><h${h} id="${id}-t" class="t">Waiting on you: permission</h${h}>${tool}</div>${from ? `<p class="m">from ${esc(from)}</p>` : ""}${callHtml(p)}${controlsHtml(p)}</article>`;
+  return `<article class="action permission" id="${elementId(p)}" tabindex="-1" data-permission="${id}" data-focus-key="${id}" aria-labelledby="${id}-t"><div class="action-head"><h${h} id="${id}-t" class="t">Waiting on you: permission</h${h}>${tool}</div>${from ? `<p class="m">from ${esc(from)}</p>` : ""}${callHtml(p)}${controlsHtml(p)}</article>`;
 }
 
 /** Puts the focus on a prompt's note once it is answered, never on a button that approves. */

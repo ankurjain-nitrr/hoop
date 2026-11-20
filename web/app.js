@@ -9,7 +9,7 @@ import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
-import { loadPermissions, onPermissions, permissionFormOpen, prompts, promptHtml } from "/permissions.js";
+import { loadPermissions, onPermissions, permissionFormOpen, permissionsPainted, prompts, promptHtml } from "/permissions.js";
 import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { OPTION, rowCells, TABLE_DELIM } from "/blocks.js";
@@ -955,6 +955,7 @@ function paintList() {
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
   regainFocus(app, was);
+  permissionsPainted();
 }
 
 async function renderList() {
