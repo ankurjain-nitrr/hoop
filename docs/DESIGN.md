@@ -689,7 +689,9 @@ session is doing: waiting (a wait runs), idle or busy (and whether a submit can 
 ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
 ten seconds while visible. While the latest review reached the session and isn't read, the header
 leaves that line out, since it still says what the agent did before; it asks again as soon as the
-receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs. A
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs, and
+"No response yet" (`no_response`, `noResponse` in `src/web.ts`) while that review's `responses`
+entry is `none` and the owner's session is idle or has ended (`agentState`). A
 review on a review a person opened from a file asks no session to act (`asksClaudeToAct`), so it is
 never marked.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
