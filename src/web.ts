@@ -21,7 +21,7 @@ import { editWork, KEEPS, removeWork, hasWork } from "./work.js";
 import { DISMISSED_MAX, linkTodos, workView } from "./work-view.js";
 import { claudeSessions, ownerSession, type SessionReader } from "./claude-sessions.js";
 import { joinBlocks, requeue } from "./build.js";
-import type { DraftSeen } from "./build-drafts.js";
+import { type DraftSeen, emptySections } from "./build-drafts.js";
 import { Steer } from "./steer.js";
 import type { Sender } from "./deliver.js";
 import { recordStates } from "./history.js";
@@ -202,6 +202,30 @@ function askCounts(hoop: Hoop, meta: Meta) {
 }
 
 /**
+ * What a review waits on the person for, for Home's Waiting on you, and since when: a verdict on its
+ * latest revision, an answer to a quick question, or a build's empty section to write or generate
+ * (one with nothing under it, no request open to Claude and no draft waiting). Undefined otherwise.
+ */
+export function waitsOnYou(hoop: Hoop, meta: Meta, status: string): { kind: "review" | "question" | "build"; since: string } | undefined {
+  if (meta.superseded_by) return undefined;
+  if (status === "question") return { kind: "question", since: meta.created };
+  if (status === "awaiting_review" && !meta.ask) return { kind: "review", since: hoop.store.revisionAt(meta.id) ?? meta.updated };
+  if (status !== "building") return undefined;
+  const build = readBuild(hoop, meta.id);
+  const asked = (build?.requests ?? []).some((r) => r.status !== "written");
+  return build && !asked && emptySections(build).length ? { kind: "build", since: meta.updated } : undefined;
+}
+
+/** A build's state, or undefined when its file is missing or can't be read: one such build never fails the list. */
+function readBuild(hoop: Hoop, id: string) {
+  try {
+    return hoop.builds.has(id) ? hoop.builds.read(id) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Whether Home shows "No response yet" on a review: Claude read its latest submitted review, which
  * asks it to act, and hasn't revised or replied since, while its session is idle or has ended. A
  * session at work, or waiting on the review, may still be responding.
@@ -218,11 +242,14 @@ export function noResponse(hoop: Hoop, meta: Meta, sessions: SessionReader = cla
 /** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
   const session = sessionOf(hoop, meta, live, sessions);
+  const status = reviewStatus(hoop.store, meta);
+  const waits = waitsOnYou(hoop, meta, status.status_key);
   return {
-    ...reviewStatus(hoop.store, meta),
+    ...status,
     ...(session ? { session } : {}),
     place: placeOf(meta),
     unread: unread(hoop, meta),
+    ...(waits ? { waits_on_you: waits } : {}),
     ...(unread(hoop, meta) && notSent(hoop, meta) ? { not_sent: true } : {}),
     ...(noResponse(hoop, meta, sessions) ? { no_response: true } : {}),
     ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),

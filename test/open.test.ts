@@ -124,6 +124,8 @@ test("the review page and Home say you opened a file, never the account name, an
       writeFileSync(join(dir, "notes.md"), "# Notes\n\nMore.\n");
       const other = hoop.open(join(dir, "notes.md")).review_id;
       hoop.store.update(other, { ...hoop.store.meta(other), opened_by: "renamed-account" });
+      // With a comment each, they wait on no one's verdict and stay in their group under Pending.
+      for (const id of [review_id, other]) hoop.review(id, { verdict: "comment", reviewer: "you", comments: [{ item: "DOC", line: 1, body: "Later." }] });
       await page.goto(base);
       const head = page.locator(".list .session h3").first();
       await head.waitFor();

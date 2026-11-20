@@ -27,3 +27,19 @@ export const REVIEW_PATH = new RegExp(`/r/${ID}`);
  * @returns {string | undefined}
  */
 export const reviewOfPath = (path) => path.match(new RegExp(`^/r/(${ID})$`))?.[1];
+
+/**
+ * The element ID of a Work page item: a session (`kind` "session", `id` ""), a todo or a subagent.
+ * @param {string} session
+ * @param {string} kind
+ * @param {string} id
+ * @returns {string}
+ */
+export const workItemId = (session, kind, id) => `${kind}-${session}-${id}`.replace(/[^A-Za-z0-9_-]/g, "_");
+
+/**
+ * The Work page's link to a session's section.
+ * @param {string} session
+ * @returns {string}
+ */
+export const workSessionPath = (session) => `/work#${workItemId(session, "session", "")}`;
