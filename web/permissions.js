@@ -20,7 +20,8 @@ import { announce } from "/frame.js";
 const SHOWN_MS = 10 * 60 * 1000;
 /** How long an answered card keeps its place and size, and how long Allow once waits after the cards changed. */
 const HOLD_MS = 1500;
-const QUIET_MS = 500;
+/** How long Allow once waits; a test may make it longer (`window.HOOP_QUIET_MS`) so its press lands inside. */
+const quietMs = () => window.HOOP_QUIET_MS ?? 500;
 /** The longest a reason runs, as Won't do's. */
 const REASON_MAX = 200;
 
@@ -44,7 +45,7 @@ const perm = {
     // starts the quiet moment too. A load's redraw waits while a Deny box is open.
     if (local || !permissionFormOpen()) {
       const now = drawnLayout();
-      if (now !== perm.drawn) perm.quietUntil = Math.max(perm.quietUntil, Date.now() + QUIET_MS);
+      if (now !== perm.drawn) perm.quietUntil = Math.max(perm.quietUntil, Date.now() + quietMs());
       perm.drawn = now;
     }
     perm.pages.forEach((f) => f(local));
@@ -90,7 +91,7 @@ function countDown(id) {
   setTimeout(() => {
     if (perm.holds[id]?.token !== h.token) return;
     delete perm.holds[id];
-    perm.quietUntil = Date.now() + QUIET_MS;
+    perm.quietUntil = Date.now() + quietMs();
     perm.repaint(false);
   }, HOLD_MS);
 }
@@ -109,7 +110,7 @@ export async function loadPermissions() {
   const was = new Map(perm.list.map((p) => [p.id, p.state]));
   for (const p of list) if (was.get(p.id) === "waiting" && p.state !== "waiting") hold(p.id);
   // Cards that changed or moved: Allow once waits a moment, so a press aimed at one lands on no other.
-  if (layout(list) !== layout(perm.list)) perm.quietUntil = Date.now() + QUIET_MS;
+  if (layout(list) !== layout(perm.list)) perm.quietUntil = Date.now() + quietMs();
   perm.list = list;
   if (perm.denying && !list.some((p) => p.id === perm.denying && p.state === "waiting")) perm.denying = null;
   perm.repaint(false);
@@ -131,14 +132,18 @@ export function permissionsPainted(scrolled = false) {
   const height = document.documentElement.scrollHeight;
   const own = scrolled && height === pageHeight;
   if (!own && [...now].some(([id, y]) => places.has(id) && Math.abs(places.get(id) - y) >= 1))
-    perm.quietUntil = Math.max(perm.quietUntil, Date.now() + QUIET_MS);
+    perm.quietUntil = Math.max(perm.quietUntil, Date.now() + quietMs());
   places = now;
   pageHeight = height;
 }
 
-// Cards move without a redraw too: a part folding open, text rewrapping, a font loading.
-const app = document.getElementById("app");
-if (app) new ResizeObserver(() => permissionsPainted()).observe(app);
+// Cards move without a redraw too: a part folding open, text rewrapping, a font loading, or the
+// banner above the page showing or clearing.
+const sized = new ResizeObserver(() => permissionsPainted());
+for (const id of ["banner", "app"]) {
+  const el = document.getElementById(id);
+  if (el) sized.observe(el);
+}
 window.addEventListener("resize", () => permissionsPainted());
 window.addEventListener("scroll", () => permissionsPainted(true), { passive: true });
 document.fonts?.addEventListener("loadingdone", () => permissionsPainted());
@@ -296,7 +301,7 @@ async function answer(id, body) {
   hold(id);
   perm.busy = id;
   perm.errors[id] = "";
-  perm.quietUntil = Date.now() + QUIET_MS;
+  perm.quietUntil = Date.now() + quietMs();
   focusCard(id);
   perm.repaint();
   focusCard(id);
@@ -311,7 +316,7 @@ async function answer(id, body) {
     perm.errors[id] = err.message;
   }
   perm.busy = null;
-  perm.quietUntil = Date.now() + QUIET_MS;
+  perm.quietUntil = Date.now() + quietMs();
   await loadPermissions();
   perm.repaint();
   // Still waiting (the answer failed): no hold, so a retry holds afresh.

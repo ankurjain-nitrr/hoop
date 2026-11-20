@@ -43,6 +43,12 @@ async function homeFast(page: import("playwright-core").Page, base: string) {
 /** Waits out the moment Allow once ignores presses after the cards appeared or moved. */
 const settled = (page: { waitForTimeout(ms: number): Promise<void> }) => page.waitForTimeout(600);
 
+/**
+ * Makes each quiet moment from now on last five seconds, so a test's press after a move lands
+ * inside it however slow the machine.
+ */
+const stretchQuiet = (page: import("playwright-core").Page) => page.evaluate(() => Object.assign(window, { HOOP_QUIET_MS: 5000 }));
+
 /** "14:02" as the pages write a time today: its spaces don't break. */
 const CLOCK = /\d{1,2}:\d{2}(?: [AP]M)?$/;
 
@@ -349,6 +355,7 @@ test("regression: a hold behind an open Deny box counts down only once the card 
       await homeFast(page, base);
       await page.locator(`[data-permission="${second}"] [data-perm-allow]`).waitFor();
       await settled(page);
+      await stretchQuiet(page);
       await page
         .locator(`[data-permission="${second}"]`)
         .getByRole("button", { name: /^Deny:/ })
@@ -418,6 +425,7 @@ function onTwoSessions(fn: (page: Page, s: ReturnType<typeof twoSessions>) => Pr
 
 test("regression: when sessions swap places on Work, a press where a card was allows nothing", { skip: BROWSER_SKIP }, async () => {
   await onTwoSessions(async (page, { h, older, newer }) => {
+    await stretchQuiet(page);
     const box = (await page.locator(`[data-permission="${newer}"] [data-perm-allow]`).boundingBox())!;
     const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
     assert.ok((await allowY(page, older)) > box.y, "the newer session is on top");
@@ -462,6 +470,20 @@ test("regression: a prompt answered in the terminal leaves focus on its own note
   });
 });
 
+/** Waits, checking often, until a prompt's Allow once sits more than a pixel `way` from `y` on screen. */
+const allowMoves = (page: Page, id: string, y: number, way: "up" | "down") =>
+  page.waitForFunction(
+    ([pid, at, w]) => {
+      const now = document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().top;
+      return w === "up" ? now < at - 1 : now > at + 1;
+    },
+    [id, y, way] as const,
+    { timeout: 5000, polling: 10 },
+  );
+
+/** Shows `text` in the page's banner, or clears it. A string, so the page's own module path needs no types. */
+const banner = (page: Page, text: string) => page.evaluate(`import("/frame.js").then((m) => m.setBanner(${JSON.stringify(text)}))`);
+
 /** Presses a prompt's Allow once, and checks the press counted for nothing. */
 async function pressIgnored(page: Page, h: string, id: string, why: string) {
   await page.locator(`[data-permission="${id}"] [data-perm-allow]`).click();
@@ -478,6 +500,7 @@ test("regression: a note that expires moves the cards below, and Allow once wait
       await workFast(page, base);
       await page.locator(`[data-permission="${id}"] [data-perm-allow]`).waitFor();
       await settled(page);
+      await stretchQuiet(page);
       // Answered almost ten minutes ago, once the page shows: its note goes from the page in four
       // seconds, well after its hold lets go.
       settlePermission(h, old, "terminal", new Date(Date.now() - 10 * 60 * 1000 + 4000));
@@ -498,14 +521,11 @@ test("regression: a card that moves with no redraw, as when the window narrows, 
       await page.goto(`${base}/`);
       await page.locator(`[data-permission="${id}"] [data-perm-allow]`).waitFor();
       await settled(page);
+      await stretchQuiet(page);
       const y = await allowY(page, id);
       // The description above the buttons wraps onto more lines.
       await page.setViewportSize({ width: 420, height: 900 });
-      await page.waitForFunction(
-        ([pid, at]) => document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().y > (at as number) + 1,
-        [id, y] as const,
-        { timeout: 5000, polling: 10 },
-      );
+      await allowMoves(page, id, y, "down");
       await pressIgnored(page, h, id, "a press right after the card moved counts for nothing");
     },
     new Hoop(new Store(h)),
@@ -522,6 +542,7 @@ test("regression: a card that slides down on screen as the scroll clamps makes A
       const allow = page.locator(`[data-permission="${id}"] [data-perm-allow]`);
       await allow.waitFor();
       await settled(page);
+      await stretchQuiet(page);
       // Scrolled to the bottom of a page made taller, with the card near the top of the screen: the
       // next redraw drops what made it taller, the browser pulls the scroll back, and the card slides down.
       const y = await page.evaluate((pid) => {
@@ -534,11 +555,7 @@ test("regression: a card that slides down on screen as the scroll clamps makes A
         return b.getBoundingClientRect().top;
       }, id);
       assert.ok(y > 50 && y < 200, `the card is near the top of the screen (${y})`);
-      await page.waitForFunction(
-        ([pid, at]) => document.querySelector(`[data-permission="${pid}"] [data-perm-allow]`)!.getBoundingClientRect().top > (at as number) + 1,
-        [id, y] as const,
-        { timeout: 5000, polling: 10 },
-      );
+      await allowMoves(page, id, y, "down");
       await pressIgnored(page, h, id, "a press right after the card slid counts for nothing");
     },
     new Hoop(new Store(h)),
@@ -566,3 +583,48 @@ test("the person's own scrolling never makes Allow once wait", { skip: BROWSER_S
     new Hoop(new Store(h)),
   );
 });
+
+/**
+ * Runs `fn` on Home, `height` px tall, with one prompt (with `description`) below the banner, after
+ * the banner showed and cleared again, as a pages check that came back clears it. `fn`'s `before`
+ * runs while the banner still shows.
+ */
+function afterBanner(height: number, description: string, fn: (page: Page, h: string, id: string) => Promise<void>, before?: (page: Page) => Promise<unknown>) {
+  const h = home();
+  const id = ask(h, "Bash", { command: "npm test", description });
+  return withBrowser(
+    async ({ base, page }) => {
+      await page.setViewportSize({ width: 800, height });
+      await page.goto(`${base}/`);
+      await page.locator(`[data-permission="${id}"] [data-perm-allow]`).waitFor();
+      await banner(page, "The pages stopped. Any hoop command or a new session starts them again.");
+      // The page looks at the cards while the banner shows, as it does on any redraw.
+      await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+      await settled(page);
+      await before?.(page);
+      const y = await allowY(page, id);
+      await banner(page, "");
+      await allowMoves(page, id, y, "up");
+      await fn(page, h, id);
+    },
+    new Hoop(new Store(h)),
+  );
+}
+
+test("regression: a banner above the cards that clears makes Allow once wait", { skip: BROWSER_SKIP }, () =>
+  afterBanner(900, "Run the tests", (page, h, id) => pressIgnored(page, h, id, "a press right after the banner cleared counts for nothing"), stretchQuiet),
+);
+
+test("regression: after a banner clears, the person's own scroll never makes Allow once wait", { skip: BROWSER_SKIP }, () =>
+  afterBanner(300, "Run the tests ".repeat(80).trim(), async (page, h, id) => {
+    await settled(page);
+    // A wrong quiet moment would last long enough to catch the press.
+    await stretchQuiet(page);
+    const before = await page.evaluate(() => window.scrollY);
+    await page.mouse.wheel(0, 40);
+    await page.waitForFunction((was) => window.scrollY !== was, before);
+    await page.locator(`[data-permission="${id}"] [data-perm-allow]`).click();
+    await page.locator(`[data-permission-note="${id}"]`).waitFor();
+    assert.equal(readPermission(h, id)!.state, "allowed");
+  }),
+);
