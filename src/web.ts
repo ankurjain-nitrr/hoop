@@ -225,6 +225,20 @@ function readBuild(hoop: Hoop, id: string) {
   }
 }
 
+/**
+ * Whether Home shows "No response yet" on a review: Claude read its latest submitted review, which
+ * asks it to act, and hasn't revised or replied since, while its session is idle or has ended. A
+ * session at work, or waiting on the review, may still be responding.
+ */
+export function noResponse(hoop: Hoop, meta: Meta, sessions: SessionReader = claudeSessions): boolean {
+  if (meta.ask) return false;
+  const key = latestKey(hoop, meta);
+  // Unread wins: a read by a session other than the owner's leaves the review unread for its owner.
+  if (!key || unread(hoop, meta) || responses(hoop, meta)[key]?.kind !== "none") return false;
+  const state = agentState(hoop.store, meta, sessions)?.state;
+  return state === "idle" || state === "ended";
+}
+
 /** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
   const session = sessionOf(hoop, meta, live, sessions);
@@ -237,6 +251,7 @@ function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: S
     unread: unread(hoop, meta),
     ...(waits ? { waits_on_you: waits } : {}),
     ...(unread(hoop, meta) && notSent(hoop, meta) ? { not_sent: true } : {}),
+    ...(noResponse(hoop, meta, sessions) ? { no_response: true } : {}),
     ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),
   };
 }
@@ -1133,8 +1148,10 @@ function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error
 function errorReply(err: unknown): [number, Record<string, unknown>] {
   if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
   if (err instanceof Error && /^(no review|invalid review id) /.test(err.message)) return [404, { error: err.message }];
+  // The stack is read here, not through `field`: a stack read inside a shared getter taints every
+  // value that getter returns, which CodeQL then follows into replies (alert 63).
   const message = err instanceof Error ? err.message : String(err);
-  logFailure(message, field(err, "stack"));
+  logFailure(message, err instanceof Error ? err.stack : undefined);
   return [500, { error: `hoop failed on this request; ${join(hoopHome(), "pages.jsonl")} has the details` }];
 }
 

@@ -15,7 +15,10 @@ const TIPS = {
 const OFF = "hoop:tips:off";
 const USED = "hoop:tips:used:";
 
-/** Reads a stored flag; storage that can't be read counts as unset. */
+/**
+ * Reads a stored flag; storage that can't be read counts as unset.
+ * @param {string} key
+ */
 function flag(key) {
   try {
     return localStorage.getItem(key) === "1";
@@ -24,7 +27,11 @@ function flag(key) {
   }
 }
 
-/** Stores a flag, or clears it; storage that refuses keeps nothing, and the page works as before. */
+/**
+ * Stores a flag, or clears it; storage that refuses keeps nothing, and the page works as before.
+ * @param {string} key
+ * @param {boolean} on
+ */
 function setFlag(key, on) {
   try {
     if (on) localStorage.setItem(key, "1");
@@ -37,12 +44,16 @@ function setFlag(key, on) {
 /** Whether tips show at all. */
 const tipsOn = () => !flag(OFF);
 
-/** Whether tip `name` shows now: tips are on and its feature wasn't used in this browser. */
+/**
+ * Whether tip `name` shows now: tips are on and its feature wasn't used in this browser.
+ * @param {string} name
+ */
 export const showsTip = (name) => tipsOn() && !flag(USED + name);
 
 /**
  * Retires tip `name` for good: its feature was used. A tip on the page keeps its place, unseen, so
  * nothing moves, and no control is described by it any more.
+ * @param {string} name
  */
 export function retireTip(name) {
   setFlag(USED + name, true);
@@ -56,6 +67,9 @@ export function retireTip(name) {
  * Tip `name`'s line, with `id` for the control's `aria-describedby`; empty when it doesn't show,
  * unless `keep`, when its place stays, unseen, as a page that showed it keeps it until it loads
  * again. The link opens the feature's page in a new tab, as other links to another site do.
+ * @param {keyof typeof TIPS} name
+ * @param {string} id
+ * @param {{ keep?: boolean }} [options]
  */
 export function tipHtml(name, id, { keep = false } = {}) {
   const shows = showsTip(name);
@@ -71,7 +85,7 @@ export function tipsSwitchHtml() {
 }
 
 document.addEventListener("click", (e) => {
-  const b = e.target.closest?.("#tipsOn");
+  const b = /** @type {Element | null} */ (e.target)?.closest?.("#tipsOn");
   if (!b) return;
   setFlag(OFF, tipsOn());
   b.outerHTML = tipsSwitchHtml();
