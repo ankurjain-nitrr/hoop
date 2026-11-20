@@ -201,7 +201,6 @@ function askCounts(hoop: Hoop, meta: Meta) {
   return { state: askState(hoop.store, meta), questions: items.length, unanswered: items.filter((q) => !answers.get(q.id)?.length).length };
 }
 
-/** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 /**
  * What a review waits on the person for, for Home's Waiting on you, and since when: a verdict on its
  * latest revision, an answer to a quick question, or a build's empty section to write or generate
@@ -212,11 +211,21 @@ export function waitsOnYou(hoop: Hoop, meta: Meta, status: string): { kind: "rev
   if (status === "question") return { kind: "question", since: meta.created };
   if (status === "awaiting_review" && !meta.ask) return { kind: "review", since: hoop.store.revisionAt(meta.id) ?? meta.updated };
   if (status !== "building") return undefined;
-  const build = hoop.builds.read(meta.id);
-  const asked = (build.requests ?? []).some((r) => r.status !== "written");
-  return !asked && emptySections(build).length ? { kind: "build", since: meta.updated } : undefined;
+  const build = readBuild(hoop, meta.id);
+  const asked = (build?.requests ?? []).some((r) => r.status !== "written");
+  return build && !asked && emptySections(build).length ? { kind: "build", since: meta.updated } : undefined;
 }
 
+/** A build's state, or undefined when its file is missing or can't be read: one such build never fails the list. */
+function readBuild(hoop: Hoop, id: string) {
+  try {
+    return hoop.builds.has(id) ? hoop.builds.read(id) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
   const session = sessionOf(hoop, meta, live, sessions);
   const status = reviewStatus(hoop.store, meta);

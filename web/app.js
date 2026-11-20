@@ -14,7 +14,7 @@ import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline
 import { OPTION, rowCells, TABLE_DELIM } from "/blocks.js";
 import { depthOf, outlineHtml } from "/outline.js";
 import { diagramHtml, isDiagram, mountDiagrams } from "/diagram.js";
-import { reviewOfPath, reviewPath } from "/links.js";
+import { reviewOfPath, reviewPath, workSessionPath } from "/links.js";
 import { DOC_LINES, docLineText } from "/doc-lines.js";
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
@@ -785,14 +785,18 @@ const WAITS = {
   work: "Work · Answer the prompt",
 };
 
-/** What a Work session's step waits on that only you can answer: a permission prompt or another dialog. */
-const PROMPTS = new Set(["permission", "dialog"]);
+/**
+ * What a Work session's step waits on that only you can answer in Claude Code: a permission prompt,
+ * Claude Code's own question (AskUserQuestion), or another dialog. A step waiting on a hoop review
+ * isn't one: that review is listed as itself.
+ */
+const PROMPTS = new Set(["permission", "question", "dialog"]);
 
 /** The Work page's sessions and subagents whose current step waits on a prompt, as Waiting on you rows. */
 function workWaits(sessions) {
   return sessions.flatMap((s) => {
     const name = s.name ?? "Unnamed session";
-    const href = `/work#${`session-${s.id}-`.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+    const href = workSessionPath(s.id);
     const steps = [s.doing, ...(s.agents ?? []).map((a) => a.doing)].filter((d) => d && PROMPTS.has(d.waiting));
     return steps.map((d) => ({ kind: "work", title: d.what, href, since: d.at, session: name }));
   });
@@ -1415,9 +1419,14 @@ function cancelRowClose() {
   paintList();
 }
 
-/** The row link after a review's row on Home, else the one before it, as a focus target; Completed's heading when it was the last. */
+/**
+ * The row link after a review's row on Home, in its own section (Waiting on you or Pending), else the
+ * one before it, as a focus target; Completed's heading when it was the last.
+ */
 function nextRowFocus(id) {
-  const links = [...document.querySelectorAll("#g-pending-body .list-row > a.row")].filter((a) => a.checkVisibility());
+  const own = [...document.querySelectorAll(".list .list-row > a.row")].find((a) => a.getAttribute("href") === reviewPath(id));
+  const section = own?.closest("section.group") ?? document.getElementById("g-pending-body");
+  const links = [...(section?.querySelectorAll(".list-row > a.row") ?? [])].filter((a) => a.checkVisibility());
   const at = links.findIndex((a) => a.getAttribute("href") === reviewPath(id));
   const next = links[at + 1] ?? links[at - 1];
   return next ? `href:${next.getAttribute("href")}` : 'sel:[data-collapse="home:completed"]';
