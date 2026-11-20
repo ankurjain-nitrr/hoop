@@ -32,6 +32,8 @@ const KNOWN: Record<string, Record<string, number>> = {
   "web/build-drafts.js": { alert: 1 },
   "web/build-history.js": { alert: 1 },
   "web/context.js": { alert: 2 },
+  // A permission prompt's error line, under Allow once and Deny or its reason box.
+  "web/permissions.js": { alert: 1 },
   "web/revise.js": { alert: 1 },
   "web/work.js": { alert: 4 },
 };

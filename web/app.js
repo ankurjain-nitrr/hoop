@@ -9,6 +9,7 @@ import { api, post } from "/api.js";
 import { notifyHtml, watchPending } from "/pending.js";
 import { tipsSwitchHtml } from "/tips.js";
 import { icons } from "/icons.js";
+import { loadPermissions, onPermissions, permissionFormOpen, permissionsPainted, prompts, promptHtml } from "/permissions.js";
 import { readAt, span } from "/activity.js";
 import { plainText, PROSE, renderLine, renderTableRow, titleHtml } from "/inline.js";
 import { OPTION, rowCells, TABLE_DELIM } from "/blocks.js";
@@ -803,7 +804,7 @@ function workWaits(sessions) {
     const agents = (s.agents ?? []).map((a) => a.doing);
     const own = s.doing?.waiting === "dialog" && agents.some((d) => d?.waiting) ? undefined : s.doing;
     const steps = [own, ...agents].filter((d) => d && PROMPTS.has(d.waiting));
-    return steps.map((d) => ({ kind: "work", title: d.what, href, since: d.at, session: name }));
+    return steps.map((d) => ({ kind: "work", title: d.what, href, since: d.at, session: name, waiting: d.waiting, sessionId: s.id }));
   });
 }
 
@@ -822,7 +823,14 @@ function waitingItems() {
     .filter((m) => m.waits_on_you)
     .map((m) => ({ kind: m.waits_on_you.kind, title: m.title, href: reviewPath(m.id), since: m.waits_on_you.since, session: sessionName(m), review: m }));
   const actions = home.actions.filter((a) => a.state === "open").map((a) => ({ kind: "action", since: a.created, action: a }));
-  return [...reviews, ...workWaits(home.work), ...actions].sort((a, b) => (Date.parse(a.since) || 0) - (Date.parse(b.since) || 0));
+  // A session's permission prompt that shows here as a card, with Allow once and Deny, lists once: as the card.
+  const carded = new Set(
+    prompts()
+      .filter((p) => p.state === "waiting")
+      .map((p) => p.session),
+  );
+  const work = workWaits(home.work).filter((w) => !(w.waiting === "permission" && carded.has(w.sessionId)));
+  return [...reviews, ...work, ...actions].sort((a, b) => (Date.parse(a.since) || 0) - (Date.parse(b.since) || 0));
 }
 
 /** One row of Waiting on you: an action item as on Home, or the kind and what it asks, the title as a link, its age and its session. */
@@ -838,14 +846,18 @@ function waitingRowHtml(w, now) {
 /** Home's first section: everything Claude waits on you for, oldest first, each with what it asks, its age and its session. */
 function waitingHtml() {
   const items = waitingItems();
+  // Claude Code's permission prompts: each waiting one, and an answered one's note for a while.
+  const asks = prompts();
+  const waiting = asks.filter((p) => p.state === "waiting").length;
+  const perms = asks.map((p) => promptHtml(p, 3, p.session_label)).join("");
   const undo = undoneHtml();
-  if (!items.length && !undo) return "";
-  // Holding only the Undo line after Done on its last item: its name, with no count and no fold.
-  if (!items.length)
-    return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${undo}</div></section>`;
+  if (!items.length && !waiting && !undo && !perms) return "";
+  // Holding only the Undo line after Done on its last item, or answered prompts' notes: its name, with no count and no fold.
+  if (!items.length && !waiting)
+    return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">Waiting on you</h2><div id="g-waiting-body">${perms}${undo}</div></section>`;
   const key = "home:waiting";
   const now = Date.now();
-  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", foldCount("Waiting on you", items.length))}</h2><div ${foldBody(key, "g-waiting-body")}>${undo}${items.map((w) => waitingRowHtml(w, now)).join("")}</div></section>`;
+  return `<section class="group" aria-labelledby="g-waiting"><h2 id="g-waiting">${foldButton(key, "g-waiting-body", foldCount("Waiting on you", items.length + waiting))}</h2><div ${foldBody(key, "g-waiting-body")}>${perms}${undo}${items.map((w) => waitingRowHtml(w, now)).join("")}</div></section>`;
 }
 
 /** What a folded session's reviews are, as "2 awaiting review · 1 approved". */
@@ -896,12 +908,14 @@ function listHtml() {
     `<div class="list-row"><a class="row" href="${esc(reviewPath(m.id))}"><span class="t fmt">${titleHtml(m.title)}</span>${m.sample ? '<span class="tag-sample">Sample</span>' : ""}${count(m)}${status(m)}${readBadge(m)}${m.summary && m.summary !== m.title ? `<span class="s" title="${esc(m.summary)}">${esc(m.summary)}</span>` : ""}<span class="m">updated ${esc(readAt(m.updated))}</span></a>${rowCloseHtml(m)}</div>`;
   const prRow = (p) =>
     `<div class="list-row"><a class="row pr" href="${esc(p.url)}"${NEW_TAB}><span class="t">${esc(p.title || `${p.repo}#${p.number}`)}</span>${p.title ? `<span class="rev">${esc(p.repo)}#${p.number}</span>` : ""}${prBadgesHtml(p)}${p.summary ? `<span class="s" title="${esc(p.summary)}">${esc(p.summary)}</span>` : ""}<span class="m">pull request opened by ${esc(p.owner)}</span></a></div>`;
-  if (!list.length && !prs.length && !home.actions.length) return startHtml();
+  // A permission prompt waits on the person like an open action item.
+  const asks = prompts();
+  if (!list.length && !prs.length && !home.actions.length && !asks.length) return startHtml();
   // Until a real review comes, Home keeps offering the sample: one finished with (approved or closed) isn't one.
-  const start = !prs.length && !home.actions.length && list.every(finishedSample);
+  const start = !prs.length && !home.actions.length && !asks.length && list.every(finishedSample);
   // The server lists reviews newest first, so each section and each session keeps that order;
   // pull requests follow the sessions, newest first. With nothing open, one line says so above Completed.
-  const clear = !waitingItems().length && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
+  const clear = !waitingItems().length && !asks.length && !list.some((m) => sectionOf(m) === "pending") && !prs.some((p) => prSection(p) === "pending");
   return (
     topHtml(start, clear) +
     SECTIONS.map(([key, label]) => {
@@ -1032,6 +1046,7 @@ function paintList() {
   else if (focus?.startsWith("href:")) [...document.querySelectorAll(".list a")].find((a) => a.getAttribute("href") === focus.slice(5))?.focus();
   else if (focus) $(`[data-rename="${CSS.escape(focus)}"]`)?.focus();
   regainFocus(app, was);
+  permissionsPainted();
 }
 
 async function renderList() {
@@ -1041,6 +1056,7 @@ async function renderList() {
   home.shown = true;
   paintList();
   loadLoopTime();
+  void loadPermissions();
   // Pull request states come from gh, which may be slow, so they follow the reviews; Home asks again each minute while open.
   loadPrs();
   setInterval(loadPrs, window.HOOP_PRS_MS ?? 60_000);
@@ -1319,7 +1335,12 @@ async function noticeChange(m) {
 }
 
 /** Shows a newer list of action items on Home, when it changed. */
+// Home shows the permission prompts again when they change, or after an answer.
+onPermissions((local) => home.shown && location.pathname === "/" && (local ? paintList() : repaintList()));
+
 function showActions(items) {
+  // Home's regular ask for action items asks for the permission prompts too.
+  if (home.shown) void loadPermissions();
   if (JSON.stringify(items) === JSON.stringify(home.actions)) return;
   home.actions = items;
   if (!home.shown) return;
@@ -1336,8 +1357,8 @@ function dropStaleClose() {
 
 function repaintList() {
   dropStaleClose();
-  // A refresh while a session is being renamed, or a Won't do or Close reason written, waits for the form to close, so it doesn't drop the typed text.
-  if (home.renaming || home.declining || home.closing) return;
+  // A refresh while a session is being renamed, or a Won't do, Close or Deny reason written, waits for the form to close, so it doesn't drop the typed text.
+  if (home.renaming || home.declining || home.closing || permissionFormOpen()) return;
   // A refresh keeps focus on the same link or disclosure button.
   const active = document.activeElement;
   const href = active?.closest?.(".list a")?.getAttribute("href");
