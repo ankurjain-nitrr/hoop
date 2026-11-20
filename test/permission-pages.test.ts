@@ -484,10 +484,19 @@ const allowMoves = (page: Page, id: string, y: number, way: "up" | "down") =>
 /** Shows `text` in the page's banner, or clears it. A string, so the page's own module path needs no types. */
 const banner = (page: Page, text: string) => page.evaluate(`import("/frame.js").then((m) => m.setBanner(${JSON.stringify(text)}))`);
 
-/** Presses a prompt's Allow once, and checks the press counted for nothing. */
+/**
+ * Presses a prompt's Allow once, and checks the press counted for nothing: it sent no answer within
+ * two seconds, and an answer it did send is waited for, however slow the server, before the check.
+ */
 async function pressIgnored(page: Page, h: string, id: string, why: string) {
+  const sent = page
+    .waitForRequest((r) => r.method() === "POST" && r.url().includes("/api/permissions/"), { timeout: 2000 })
+    .then(
+      (r) => r.response(),
+      () => null,
+    );
   await page.locator(`[data-permission="${id}"] [data-perm-allow]`).click();
-  await page.waitForTimeout(300);
+  assert.equal(await sent, null, `${why}: the press sent an answer`);
   assert.equal(readPermission(h, id)!.state, "waiting", why);
 }
 
