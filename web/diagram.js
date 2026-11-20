@@ -5,6 +5,7 @@
 // matches MERMAID_SRI; offline, the diagram shows its source.
 import { esc } from "/esc.js";
 import { isDiagram, JOIN } from "/blocks.js";
+import { peek } from "/api.js";
 
 export { isDiagram };
 
@@ -49,11 +50,7 @@ let off;
  * Whether diagrams are off in hoop's off list (the pages' `diagrams_off`), asked once a page: while
  * the answer is out, nothing loads the library. A failed ask leaves them on.
  */
-const diagramsOff = () =>
-  (off ??= fetch("/api/info")
-    .then((r) => (r.ok ? r.json() : {}))
-    .then((info) => Boolean(info?.diagrams_off))
-    .catch(() => false));
+const diagramsOff = () => (off ??= peek("/api/info").then((info) => Boolean(info?.diagrams_off)));
 
 /**
  * Draws each diagram placeholder on the page in its own sandboxed frame, or, while diagrams are off,

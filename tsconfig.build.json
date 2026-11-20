@@ -1,5 +1,11 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // The build compiles src only; the web modules it imports are typed by the declarations that
+    // tsconfig.web-types.json writes beside them from their JSDoc.
+    "allowJs": false
+  },
   "include": ["src"]
 }

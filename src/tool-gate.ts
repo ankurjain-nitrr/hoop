@@ -13,7 +13,11 @@ import { addWords, answerAdd, answerIt, changeLine, editTask, quoteBlock, withdr
 export type GateDecision = { deny: string } | undefined;
 
 type Obj = Record<string, unknown>;
-const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : typeof v === "number" ? String(v) : undefined);
+/** A tool input's ID or text: a string with something in it, or a number as text. */
+function str(v: unknown): string | undefined {
+  if (typeof v === "number") return String(v);
+  return typeof v === "string" && v ? v : undefined;
+}
 
 /** Whether a todo tool call starts the todo or marks it done. */
 const starts = (status?: string) => status === "in_progress" || status === "completed";

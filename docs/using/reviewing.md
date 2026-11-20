@@ -41,8 +41,10 @@ needs approving again.
 
 ## Know that it arrived
 
-- **Receipts.** "Sent to Claude 21:03" as soon as you send, then "Read by Claude 21:04", beside the
-  latest review and under each one in the history.
+- **Receipts.** "Sent to Claude 21:03" as soon as you send, then "Read by Claude 21:04 · No response
+  yet", beside the latest review and under each one in the history. Once Claude responds, the
+  receipt says what it did: "Revised by Claude 21:10", or "Answered by Claude 21:06" for a reply. An
+  approval's receipt says only when Claude read it.
 - **Claude's state** shows under the title: waiting for your review, idle (sending wakes it), or
   ended, with the `claude --resume` command to copy. Sending gives the session one message naming
   the review, so Claude reads it even after it stopped waiting.

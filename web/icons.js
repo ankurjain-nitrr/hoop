@@ -1,8 +1,10 @@
 // Inline SVG icons on a 16 by 16 grid. They take the text color and are hidden from screen readers;
 // the control around an icon carries its name.
+/** @param {string} body */
 const svg = (body) =>
   `<svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 
+/** @type {Record<string, string>} */
 export const icons = {
   comment: svg('<path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/>'),
   info: svg('<circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.75M8 5h.01"/>'),

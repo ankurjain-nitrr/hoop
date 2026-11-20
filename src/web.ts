@@ -130,6 +130,46 @@ function asksToAct(hoop: Hoop, meta: Meta): Record<string, boolean> {
 }
 
 /**
+ * What Claude did after reading a submitted review that asks it to act: a revision of its own (not a
+ * reviewer's Apply), a reply, or nothing yet ("none").
+ */
+type Responded = { kind: "revised" | "replied"; at: string } | { kind: "none" };
+
+/**
+ * Claude's response to each submitted review it read that asks it to act, by receipt key: its first
+ * revision after it read the review, else its first reply after that, else none yet. A review that
+ * asks Claude to act on nothing (an approval, a closed or file-opened review, a session's own
+ * comment) has no entry, and neither has one Claude hasn't read.
+ */
+export function responses(hoop: Hoop, meta: Meta): Record<string, Responded> {
+  const applied = new Set(hoop.store.applied(meta.id).map((a) => a.revision));
+  const revised = Array.from({ length: meta.revisions }, (_, i) => i + 1)
+    .filter((n) => n > 1 && !applied.has(n))
+    .flatMap((n) => hoop.store.revisionAt(meta.id, n) ?? [])
+    .sort();
+  const replies = hoop.store
+    .replies(meta.id)
+    .map((r) => r.at)
+    .sort();
+  const receipts = hoop.store.receipts(meta.id);
+  const out: Record<string, Responded> = {};
+  // A response in the same millisecond as the read still comes after it.
+  const after = (at: string, list: string[]) => list.find((x) => x >= at);
+  for (let n = 1; n <= meta.revisions; n++)
+    hoop.store.feedback(meta.id, n).forEach((fb, i) => {
+      const key = receiptKey(n, i);
+      const read = receipts[key]?.at;
+      if (!read || fb.session || !asksClaudeToAct(meta, fb)) return;
+      const rev = after(read, revised);
+      const reply = after(read, replies);
+      if (rev) out[key] = { kind: "revised", at: rev };
+      else if (reply) out[key] = { kind: "replied", at: reply };
+      else out[key] = { kind: "none" };
+    });
+  return out;
+}
+
+/**
  * Whether the agent hasn't read a review's latest submitted review yet and isn't waiting for one,
  * when that review asks it to act, so the feedback sits until someone tells the session.
  */
@@ -162,6 +202,20 @@ function askCounts(hoop: Hoop, meta: Meta) {
   return { state: askState(hoop.store, meta), questions: items.length, unanswered: items.filter((q) => !answers.get(q.id)?.length).length };
 }
 
+/**
+ * Whether Home shows "No response yet" on a review: Claude read its latest submitted review, which
+ * asks it to act, and hasn't revised or replied since, while its session is idle or has ended. A
+ * session at work, or waiting on the review, may still be responding.
+ */
+export function noResponse(hoop: Hoop, meta: Meta, sessions: SessionReader = claudeSessions): boolean {
+  if (meta.ask) return false;
+  const key = latestKey(hoop, meta);
+  // Unread wins: a read by a session other than the owner's leaves the review unread for its owner.
+  if (!key || unread(hoop, meta) || responses(hoop, meta)[key]?.kind !== "none") return false;
+  const state = agentState(hoop.store, meta, sessions)?.state;
+  return state === "idle" || state === "ended";
+}
+
 /** The status key, owning session, place and unread flag the pages show for a review, and a quick question's counts. */
 function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: SessionReader = claudeSessions) {
   const session = sessionOf(hoop, meta, live, sessions);
@@ -171,6 +225,7 @@ function listed(hoop: Hoop, meta: Meta, live = openState(hoop).live, sessions: S
     place: placeOf(meta),
     unread: unread(hoop, meta),
     ...(unread(hoop, meta) && notSent(hoop, meta) ? { not_sent: true } : {}),
+    ...(noResponse(hoop, meta, sessions) ? { no_response: true } : {}),
     ...(meta.ask ? { ask: askCounts(hoop, meta) } : {}),
   };
 }
@@ -453,6 +508,8 @@ export function reviewView(hoop: Hoop, id: string, sessions: SessionReader = cla
     deliveries: hoop.store.deliveries(id),
     // Whether each submitted review, by receipt key, asks Claude to act; the page says "not read yet" only then.
     asks_to_act: asksToAct(hoop, meta),
+    // What Claude did after reading each submitted review: revised or replied, and when.
+    responses: meta.ask ? undefined : responses(hoop, meta),
     agent: agentState(hoop.store, meta, sessions),
     ...(meta.build === "open" ? { build: buildView(hoop, id) } : {}),
     ...(meta.ask ? { ask: askView(hoop, id) } : {}),
@@ -863,7 +920,15 @@ function routes(hoop: Hoop, files = snapshot(), opts: PagesOptions = {}): [strin
       },
     ],
     // The page asks for these every few seconds, to show when the agent read each submitted review.
-    ["GET", reviewApi("/receipts"), (_q, res, [id]) => send(res, 200, { receipts: hoop.store.receipts(hoop.store.meta(id!).id) })],
+    [
+      "GET",
+      reviewApi("/receipts"),
+      (_q, res, [id]) => {
+        const meta = hoop.store.meta(id!);
+        // What Claude did after each read, so a receipt that turns read shows "No response yet" at once.
+        send(res, 200, { receipts: hoop.store.receipts(meta.id), ...(meta.ask ? {} : { responses: responses(hoop, meta) }) });
+      },
+    ],
     [
       "POST",
       reviewApi("/feedback"),
@@ -1064,8 +1129,10 @@ function writeRefusal(req: IncomingMessage, allowed: string[]): [number, { error
 function errorReply(err: unknown): [number, Record<string, unknown>] {
   if (err instanceof HoopError) return [400, { error: err.message, errors: err.errors, ...(err.detail ? { detail: err.detail } : {}) }];
   if (err instanceof Error && /^(no review|invalid review id) /.test(err.message)) return [404, { error: err.message }];
+  // The stack is read here, not through `field`: a stack read inside a shared getter taints every
+  // value that getter returns, which CodeQL then follows into replies (alert 63).
   const message = err instanceof Error ? err.message : String(err);
-  logFailure(message, field(err, "stack"));
+  logFailure(message, err instanceof Error ? err.stack : undefined);
   return [500, { error: `hoop failed on this request; ${join(hoopHome(), "pages.jsonl")} has the details` }];
 }
 

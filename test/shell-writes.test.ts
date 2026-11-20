@@ -165,7 +165,8 @@ const LONG: ((n: number) => string)[] = [
 /** The fastest of three runs of both checks on `input`, in ms: a loaded machine slows a run, never speeds one. */
 function timed(input: string): number {
   let best = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < 3; i++) {
+  // The best of five: a loaded machine slows some runs, never all of them.
+  for (let i = 0; i < 5; i++) {
     const start = performance.now();
     shellWrites(input);
     shellWritesFile(input, "a");
@@ -177,13 +178,14 @@ function timed(input: string): number {
 test("long repeated input takes linear time", () => {
   // Four times the input takes about four times as long; a quadratic pattern takes sixteen times as
   // long, and once took seconds at the larger size. The ratio holds on a slow or loaded machine, where
-  // a fixed bound didn't; a floor keeps runs too fast to time from failing on noise.
+  // a fixed bound didn't: up to 12x passes, 16x fails. A 50 ms floor keeps runs too fast to time
+  // from failing on noise, far below the seconds a quadratic pattern takes.
   const n = 12_500;
   for (const make of LONG) {
     const small = timed(make(n)),
       large = timed(make(n * 4));
     const what = `${JSON.stringify(make(n).slice(0, 12))}… (${make(n * 4).length} characters)`;
-    assert.ok(large <= Math.max(10 * small, 25), `${what}: ${small.toFixed(1)} ms at a quarter the size, ${large.toFixed(1)} ms at full size`);
+    assert.ok(large <= Math.max(12 * small, 50), `${what}: ${small.toFixed(1)} ms at a quarter the size, ${large.toFixed(1)} ms at full size`);
     assert.ok(large < 2000, `${what} took ${Math.round(large)} ms`);
   }
 });

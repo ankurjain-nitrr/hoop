@@ -291,14 +291,17 @@ test("the review view sends each item's blocks, and earlier revisions' blocks be
     assert.equal("blocks" in view.history[1], false, "history keeps its shape");
   }));
 
-test("an unexpected failure's message stays in the pages log; a refusal and a missing review say why", async () => {
+test("an unexpected failure's message and stack stay in the pages log; a refusal and a missing review say why", async () => {
   const secret = `ENOENT: open '/private/${Date.now()}/review.json'`;
+  const traced = new Error(`traced ${Date.now()}`);
+  traced.stack = `Error: traced\n    at /private/stack-only/store.js:1:1`;
   const fail = (err: Error) => () => {
     throw err;
   };
   const server = createWebServer(new Hoop(new Store(tempHome())), [
     ["GET", /^\/boom$/, fail(new Error(secret))],
     ["GET", /^\/refuse$/, fail(new HoopError("this review is approved"))],
+    ["GET", /^\/trace$/, fail(traced)],
   ]);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -314,6 +317,15 @@ test("an unexpected failure's message stays in the pages log; a refusal and a mi
     const entries = log.map((l) => JSON.parse(l)).filter((e) => e.event === "request_failed" && e.error === secret);
     assert.equal(entries.length, 1, "a failure that repeats is logged once, with its stack");
     assert.match(entries[0].stack, /Error: ENOENT/);
+    assert.ok(!(await (await fetch(`${base}/trace`)).text()).includes("stack-only"), "the reply holds no stack");
+    const traceLog = readFileSync(logPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    assert.ok(
+      traceLog.some((e) => e.error === traced.message && e.stack.includes("stack-only")),
+      "the log keeps the stack",
+    );
     const refused = await fetch(`${base}/refuse`);
     assert.equal(refused.status, 400);
     assert.equal((await refused.json()).error, "this review is approved");

@@ -26,8 +26,11 @@ test("src/ and web/ write U+2028 as an escape, never as the raw character", () =
 // linked then still point at it, so it stays executable too.
 test("npm run build makes dist/bin.js, the hoop command, and dist/cli.js executable", { skip: process.platform === "win32" }, () => {
   const build: string = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts.build;
-  const [tsc, ...after] = build.split(" && ");
-  assert.match(tsc ?? "", /^tsc /);
+  // The web modules' declarations are written first; then tsc compiles src, then the step under test.
+  const steps = build.split(" && ");
+  const at = steps.findIndex((s) => /^tsc /.test(s));
+  assert.ok(at >= 0, build);
+  const after = steps.slice(at + 1);
   assert.ok(after.length, "the build script runs a step after tsc");
   const dir = mkdtempSync(join(tmpdir(), "hoop-build-"));
   mkdirSync(join(dir, "dist"));

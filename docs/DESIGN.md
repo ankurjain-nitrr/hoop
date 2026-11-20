@@ -677,14 +677,21 @@ requests and action items go the same way (`sendLive`), and so do the Work page'
 (`Steer.socket`): a session on another home isn't sent them, and they wait for the gate.
 The outcome, `sent`, `waiting`, `no_session`, `other_home` or `failed`, is kept in `deliveries.json` by the receipt
 key, returned with the submit for the page's notice, and shown beside an unread receipt: `sent` and
-`waiting` as "Sent to Claude <time>". The submit's answer also carries the review's
+`waiting` as "Sent to Claude <time>". Once read, the view's `responses` (by receipt key, also
+returned by the receipts poll) say what Claude did after it read a review that asks it to act and
+isn't a session's own comment: its first revision after the read that no reviewer's Apply made
+("Revised by Claude <time>"), else its first reply after the read ("Answered by Claude <time>"),
+else `none` ("Read by Claude <time> · No response yet"). Any other review has no entry and reads
+only "Read by". The submit's answer also carries the review's
 whole view, so the page shows the new status and receipt from it at once, with no further request. An
 agent's own replies and comments are never sent. The review page's header says what the owner's
 session is doing: waiting (a wait runs), idle or busy (and whether a submit can message it), or
 ended, with the `claude --resume <session>` command to copy; it asks `/api/reviews/<id>/agent` every
 ten seconds while visible. While the latest review reached the session and isn't read, the header
 leaves that line out, since it still says what the agent did before; it asks again as soon as the
-receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs. A
+receipt arrives. Home marks a review "Not read yet" while its latest review has no receipt and no wait runs, and
+"No response yet" (`no_response`, `noResponse` in `src/web.ts`) while that review's `responses`
+entry is `none` and the owner's session is idle or has ended (`agentState`). A
 review on a review a person opened from a file asks no session to act (`asksClaudeToAct`), so it is
 never marked.
 Every page asks `/api/reviews` every 15 seconds, hidden or not (`web/pending.js`), counts the reviews
