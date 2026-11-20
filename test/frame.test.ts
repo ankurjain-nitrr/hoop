@@ -152,8 +152,10 @@ test("regression: a message said while the live region is first made replaces th
 test("every page shows the same frame, and Home splits reviews into Pending and Completed", { skip: BROWSER_SKIP }, async () => {
   await withBrowser(async ({ hoop, base, page }) => {
     const { review_id: a } = hoop.submit(example());
-    hoop.submit({ ...example(), title: "Second review", tldr: "What the second review is about." });
+    const { review_id: second } = hoop.submit({ ...example(), title: "Second review", tldr: "What the second review is about." });
     hoop.review(a, { verdict: "changes_requested", summary: "Split it." });
+    // Commented, it waits on Claude and stays under Pending; one awaiting your verdict shows in Waiting on you.
+    hoop.review(second, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
     const { review_id: done } = hoop.submit({ ...example(), slug: "done", title: "Done review" });
     hoop.review(done, { verdict: "approved" });
     // Revising an approved review supersedes it: the old one stays completed, the new one is pending.
@@ -174,7 +176,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     // recorded todos or subagents here, so the frame has no Work link yet.
     assert.deepEqual(list, { brand: "hoop", links: ["Home"], current: "Home" });
     assert.equal(await page.locator(".list-head h1").textContent(), "Home");
-    assert.match(await page.title(), /^(\(2\) )?Home · hoop$/, "the count of reviews awaiting the person may lead the title");
+    assert.match(await page.title(), /^(\(1\) )?Home · hoop$/, "the count of reviews awaiting the person may lead the title");
     // A review here has an answer, so Home ends with Your response times, which loads after the reviews.
     await page.locator("#g-response-times").waitFor();
     const sections = await page.locator(".list .group").evaluateAll((els) =>
@@ -183,14 +185,15 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
         rows: [...el.querySelectorAll("a[href]")].map((x) => [x.querySelector(".t")!.textContent, x.querySelector(".badge")?.textContent ?? ""]),
       })),
     );
-    // A row shows its status only where it differs from its section's usual one (#201).
+    // A row shows its status only where it differs from its section's usual one (#201); what waits on
+    // you leads, in Waiting on you, and leaves Pending.
     assert.deepEqual(sections, [
+      { head: "Waiting on you 1", rows: [["Done review, again", ""]] },
       {
-        head: "Pending 3",
+        head: "Pending 2",
         rows: [
-          ["Done review, again", ""],
+          ["Second review", "Commented"],
           ["Order export: requirements", "Changes requested"],
-          ["Second review", ""],
         ],
       },
       { head: "Completed 1", rows: [["Done review", ""]] },
@@ -200,7 +203,7 @@ test("every page shows the same frame, and Home splits reviews into Pending and 
     assert.equal(await summary.textContent(), "What the second review is about.");
     assert.equal(await summary.getAttribute("title"), "What the second review is about.");
     assert.equal(await summary.evaluate((el) => getComputedStyle(el).webkitLineClamp), "2", "the TL;DR keeps to two lines");
-    const meta = await page.locator(".list .m").first().textContent();
+    const meta = await page.locator("#g-pending-body .m").first().textContent();
     assert.equal(meta!.startsWith("updated "), true, "Home names no repository or project");
     assert.equal(await page.locator(".list-head select, #list-project").count(), 0, "Home has no project filter");
     assert.doesNotMatch(meta!, /\d:\d\d:\d\d/, "dates show without seconds");

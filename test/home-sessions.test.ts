@@ -8,6 +8,10 @@ import { registerSession } from "../src/sessions.js";
 import { BROWSER_SKIP, example, TEST_SESSION, tempHome, withBrowser, hasFocus, withServer } from "./helpers.js";
 import { jsonLine as line, writeTranscript } from "./builders.js";
 
+/** A person's comment on a review, so it waits on Claude, not on the person, and stays in its session's group on Home. */
+const commented = (hoop: Hoop, id: string) =>
+  hoop.review(id, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
+
 /** A pages server for a fresh store, on a free port. */
 /** Writes a session's transcript into the test's Claude Code folder, and returns its path. */
 const transcript = (session: string, text: string) => writeTranscript(session, text, "-tmp-home-sessions");
@@ -147,10 +151,12 @@ test("Home groups each section's reviews by session, and renames a session from 
     const b = new Hoop(hoop.store, B);
     const done = hoop.submit({ ...example(), slug: "done", title: "Done review" }).review_id;
     hoop.review(done, { verdict: "approved" });
-    b.submit({ ...example(), title: "Login review" });
+    // Each pending one has a comment, so it stays in its session's group: one awaiting your verdict shows in Waiting on you.
+    commented(hoop, b.submit({ ...example(), title: "Login review" }).review_id);
     const orphan = hoop.submit({ ...example(), title: "Old review" }).review_id;
+    commented(hoop, orphan);
     hoop.store.update(orphan, { owner: undefined });
-    hoop.submit({ ...example(), title: "Export review" });
+    commented(hoop, hoop.submit({ ...example(), title: "Export review" }).review_id);
     const remove = registerSession(hoop.store.home, process.env.HOOP_REPO_DIR!);
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -242,8 +248,8 @@ test("Home folds each section and session from its heading, keeps the folds acro
     hoop.review(done, { verdict: "approved" });
     const asked = hoop.submit({ ...example(), slug: "asked", title: "Asked review" }).review_id;
     hoop.review(asked, { verdict: "changes_requested", summary: "Split it." });
-    hoop.submit({ ...example(), title: "Export review" });
-    new Hoop(hoop.store, B).submit({ ...example(), title: "Login review" });
+    commented(hoop, hoop.submit({ ...example(), title: "Export review" }).review_id);
+    commented(hoop, new Hoop(hoop.store, B).submit({ ...example(), title: "Login review" }).review_id);
     const page = await browser.newPage();
     await page.addInitScript(() => ((window as unknown as { HOOP_PRS_MS: number }).HOOP_PRS_MS = 200));
     const errors: string[] = [];
@@ -266,7 +272,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
         .locator(".session", { has: page.getByRole("button", { name: "Export plan", exact: true }) })
         .locator(".fold-summary")
         .innerText(),
-      "1 awaiting review · 1 changes requested",
+      "1 commented · 1 changes requested",
     );
     assert.equal(await pending.getByRole("button", { name: "Rename Export plan" }).isVisible(), true);
     assert.equal(await hasFocus(exportPlan), true);
@@ -338,7 +344,7 @@ test("Home folds each section and session from its heading, keeps the folds acro
       ["session", "false"],
       ["part", "true"],
     ]);
-    assert.deepEqual(await page.locator(".fold-summary").allInnerTexts(), ["1 awaiting review", "1 awaiting review · 1 changes requested", "1 approved"]);
+    assert.deepEqual(await page.locator(".fold-summary").allInnerTexts(), ["1 commented", "1 commented · 1 changes requested", "1 approved"]);
     assert.equal(await hasFocus(page.getByRole("button", { name: "Collapse all" })), true);
     assert.deepEqual(errors, []);
 

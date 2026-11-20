@@ -124,7 +124,9 @@ test("on Home, the quick question and Work pages, a redraw keeps focus on the co
   const action = (title: string) =>
     OPS.find((o) => o.name === "action")!.run(hoop, { title, description: "Do it.", done_when: { kind: "manual" } } as never, { actor: "claude" });
   action("Run the migration");
-  hoop.submit(example());
+  // Commented, the review waits on Claude and stays under Pending, whose fold the test presses.
+  const reviewed = hoop.submit(example()).review_id;
+  hoop.review(reviewed, { verdict: "comment", reviewer: "ana", comments: [{ item: "FR-3", line: 1, body: "Inclusive?" }] });
   const ask = hoop.ask({
     questions: [
       { question: "Keep it?", options: [{ label: "Keep", recommended: true }, { label: "Remove" }] },

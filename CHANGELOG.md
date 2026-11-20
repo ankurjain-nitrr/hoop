@@ -8,6 +8,11 @@ All notable changes to hoop are listed here. The format follows
 
 ### Added
 
+- Home's **Waiting on you** lists everything Claude waits on you for, oldest first, each with what
+  it asks, how long it has waited and its session: reviews awaiting your verdict ("Review · Approve
+  or request changes"), unanswered quick questions ("Question · Answer"), builds with a section to
+  write ("Build section · Write or generate"), permission prompts and dialogs from Work ("Work ·
+  Answer the prompt") and open action items. What it lists leaves its session's group below (#271).
 - Two more switches in hoop's off list, `~/.hoop/off`: `messages` stops every message into a
   session (Claude reads what you sent with `hoop_wait` or `hoop_feedback`, and Work's changes wait
   for the gate), and `mermaid` stops pages loading Mermaid, showing each diagram's source. The pages

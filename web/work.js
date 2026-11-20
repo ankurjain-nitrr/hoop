@@ -29,7 +29,7 @@ import { icons } from "./icons.js";
 import { loadPermissions, onPermissions, permissionFormOpen, permissionsPainted, prompts, promptHtml } from "./permissions.js";
 import { composing, longHint, SHORT_HINT } from "./send.js";
 import { cancelSoon, dropNames, holdKept, keep, keepSoon, keptNames, parkStale, readKept, release, SAVED_SLOT, staleDraftHtml, staleName } from "./drafts.js";
-import { REVIEW_LINK, reviewPath } from "./links.js";
+import { REVIEW_LINK, reviewPath, workItemId as itemId } from "./links.js";
 
 const app = document.getElementById("app");
 /**
@@ -355,9 +355,6 @@ function descHtml(t, key, label) {
   const button = `<button type="button" class="more" data-act="more" data-key="${esc(key)}" aria-expanded="${more}" aria-controls="${id}" aria-label="${more ? "Less" : "More"} of the description of ${esc(label)}" hidden>${more ? "Less" : "More"}</button>`;
   return `<div class="desc-wrap"><p id="${id}" class="desc${more ? " open" : ""}">${inlineHtml(t.description.trim(), descLink(t))}</p>${button}</div>`;
 }
-
-/** A todo's or subagent's element ID, which the header's stalled link points at. */
-const itemId = (session, kind, id) => `${kind}-${session}-${id}`.replace(/[^A-Za-z0-9_-]/g, "_");
 
 /** A running item's badge, how long it ran and its last activity, and a warning when it stalled. */
 function healthHtml(h, started, activity, now) {

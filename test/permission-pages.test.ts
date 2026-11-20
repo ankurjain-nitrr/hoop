@@ -77,6 +77,26 @@ test("Home's Waiting on you shows a prompt in full, and Allow once answers it th
   );
 });
 
+test("regression: a prompt shown as a card isn't listed again as its session's Work prompt", { skip: BROWSER_SKIP }, async () => {
+  const h = home();
+  const id = ask(h, "Bash", { command: "npm publish" });
+  // Work reads the same prompt as the session's step waiting on a permission prompt.
+  const doing = { what: "npm publish", at: new Date().toISOString(), open: true, waiting: "permission" };
+  const sessions = [{ id: SESSION, name: "Export work", state: "busy", doing, agents: [], todos: [], changes: [] }];
+  await withBrowser(
+    async ({ base, page }) => {
+      await page.route("**/api/work", (route) => route.fulfill({ json: { sessions } }));
+      await page.goto(`${base}/`);
+      await page.locator(`.list [data-permission="${id}"]`).waitFor();
+      await page.waitForResponse((r) => r.url().endsWith("/api/work"));
+      await settled(page);
+      assert.equal(await page.locator("#g-waiting-body .waiting-row").count(), 0, "no row besides the card");
+      assert.match((await page.locator("#g-waiting").textContent()) ?? "", /Waiting on you\s*1/, "it counts once");
+    },
+    new Hoop(new Store(h)),
+  );
+});
+
 test("Deny opens its reason box, keeps what is typed through a refresh, and sends the reason Claude reads", { skip: BROWSER_SKIP }, async () => {
   const h = home();
   const id = ask(h, "Edit", { file_path: "/repo/src/app.ts", old_string: "const a = 1;", new_string: "const a = 2;" });
