@@ -368,3 +368,30 @@ test("regression: a press whose row a held refresh took away opens nothing, and 
     { sessions: () => sessions },
   );
 });
+
+test("Work says to answer Claude Code's own question or another dialog in the terminal, and a permission prompt not", { skip: BROWSER_SKIP }, () =>
+  withBrowser(async ({ base, page }) => {
+    const at = new Date(Date.now() - 60_000).toISOString();
+    const session = (id: string, what: string, waiting: string) => ({
+      id,
+      name: what,
+      state: "busy",
+      doing: { what, at, open: true, waiting },
+      agents: [],
+      todos: [],
+      changes: [],
+    });
+    const sessions = [
+      session("q-1", "asking you a question", "question"),
+      session("d-1", "running tests", "dialog"),
+      session("p-1", "running npm publish", "permission"),
+    ];
+    await page.route("**/api/work", (route) => route.fulfill({ json: { sessions } }));
+    await page.goto(`${base}/work`);
+    const now = (id: string) => page.locator(`[id^="session-${id}"] .now`);
+    await now("q-1").waitFor();
+    assert.match(await now("q-1").innerText(), /Answer this in the terminal\.$/);
+    assert.match(await now("d-1").innerText(), /Answer this in the terminal\.$/);
+    assert.doesNotMatch(await now("p-1").innerText(), /terminal/, "hoop can answer a permission prompt, so it doesn't point away");
+  }),
+);

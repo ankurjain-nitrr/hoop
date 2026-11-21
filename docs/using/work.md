@@ -18,7 +18,8 @@ or ended. Working sessions come first.
 - **Queued for Claude** lists the messages queued while Claude works, with when each was queued.
 
 The top of the page counts "N running · M waiting on you · K stalled · J not running", each linking
-to its first row.
+to its first row. When a session waits on Claude Code's own question or another dialog, which hoop
+can't answer, its **Now:** line ends "Answer this in the terminal."
 
 A todo Claude marked in progress shows what it really is, from evidence, with the reason beside it:
 **Waiting on you** (a review or pull request it links to waits on you, or the session waits on you),
