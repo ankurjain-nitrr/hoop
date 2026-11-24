@@ -47,7 +47,7 @@
     "@biomejs/biome": "2.6.6",
     "@types/node": "26.6.6",
     "acorn": "8.19.0",
-    "axe-core": "4.14.0",
+    "axe-core": "4.14.1",
     "dependency-cruiser": "18.7.2",
     "fast-check": "4.10.2",
     "jscpd": "5.4.3",
